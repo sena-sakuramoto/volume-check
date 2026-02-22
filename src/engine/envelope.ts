@@ -1,0 +1,651 @@
+import type {
+  Point2D,
+  Road,
+  VolumeInput,
+  VolumeResult,
+} from './types';
+import { distanceToSegment, isInsidePolygon, polygonArea } from './geometry';
+import { calculateMaxCoverage } from './coverage';
+import { calculateMaxFloorArea } from './floor-area';
+import { getAbsoluteHeightLimit } from './absolute-height';
+import { calculateRoadSetbackHeight } from './setback-road';
+import { calculateAdjacentSetbackHeight } from './setback-adjacent';
+import { calculateNorthSetbackHeight } from './setback-north';
+import { applyWallSetback } from './wall-setback';
+import {
+  getRoadSetbackParams,
+  getAdjacentSetbackParams,
+  getNorthSetbackParams,
+} from './zoning';
+
+/** Grid resolution in meters for sampling height field */
+const GRID_RESOLUTION = 0.5;
+
+/** Assumed floor height in meters for maxFloors estimation */
+const FLOOR_HEIGHT = 3.0;
+
+/** Threshold for classifying an edge as roughly horizontal (for north detection) */
+const HORIZONTAL_THRESHOLD = 0.3; // radians (~17 degrees)
+
+// ---------------------------------------------------------------------------
+// Edge classification helpers
+// ---------------------------------------------------------------------------
+
+interface SiteEdge {
+  start: Point2D;
+  end: Point2D;
+}
+
+/**
+ * Get all site boundary edges as segments.
+ */
+function getSiteEdges(vertices: Point2D[]): SiteEdge[] {
+  const edges: SiteEdge[] = [];
+  const n = vertices.length;
+  for (let i = 0; i < n; i++) {
+    edges.push({ start: vertices[i], end: vertices[(i + 1) % n] });
+  }
+  return edges;
+}
+
+/**
+ * Determine whether a site edge coincides with a road edge.
+ * Uses distance threshold to match edges (within 0.1m tolerance).
+ */
+function isRoadEdge(edge: SiteEdge, roads: Road[]): boolean {
+  const midX = (edge.start.x + edge.end.x) / 2;
+  const midY = (edge.start.y + edge.end.y) / 2;
+  const mid: Point2D = { x: midX, y: midY };
+
+  for (const road of roads) {
+    const dist = distanceToSegment(mid, road.edgeStart, road.edgeEnd);
+    if (dist < 0.1) return true;
+  }
+  return false;
+}
+
+/**
+ * Identify north-facing boundary edges.
+ * North edges are non-road edges whose midpoint has a relatively high y value
+ * and whose direction is roughly horizontal (east-west).
+ *
+ * Strategy: Among all non-road edges, find ones whose midpoint y is within
+ * the top 25% of the site's y range AND whose angle from horizontal is
+ * below HORIZONTAL_THRESHOLD.
+ */
+function getNorthEdges(
+  nonRoadEdges: SiteEdge[],
+  vertices: Point2D[],
+): SiteEdge[] {
+  if (nonRoadEdges.length === 0) return [];
+
+  const allY = vertices.map((v) => v.y);
+  const minY = Math.min(...allY);
+  const maxY = Math.max(...allY);
+  const yRange = maxY - minY;
+
+  // If the site is nearly flat in Y, all edges qualify as "north"
+  const yThreshold = yRange > 0 ? maxY - yRange * 0.25 : minY;
+
+  const northEdges: SiteEdge[] = [];
+  for (const edge of nonRoadEdges) {
+    const midY = (edge.start.y + edge.end.y) / 2;
+    if (midY < yThreshold) continue;
+
+    // Check if edge is roughly horizontal (east-west direction)
+    const dx = edge.end.x - edge.start.x;
+    const dy = edge.end.y - edge.start.y;
+    const angle = Math.abs(Math.atan2(dy, dx));
+    // Horizontal means angle near 0 or near PI
+    if (angle < HORIZONTAL_THRESHOLD || Math.abs(angle - Math.PI) < HORIZONTAL_THRESHOLD) {
+      northEdges.push(edge);
+    }
+  }
+
+  // Fallback: if no clearly horizontal edges found, pick the non-road edge
+  // with the highest midpoint y
+  if (northEdges.length === 0 && nonRoadEdges.length > 0) {
+    let bestEdge = nonRoadEdges[0];
+    let bestY = (bestEdge.start.y + bestEdge.end.y) / 2;
+    for (let i = 1; i < nonRoadEdges.length; i++) {
+      const my = (nonRoadEdges[i].start.y + nonRoadEdges[i].end.y) / 2;
+      if (my > bestY) {
+        bestY = my;
+        bestEdge = nonRoadEdges[i];
+      }
+    }
+    northEdges.push(bestEdge);
+  }
+
+  return northEdges;
+}
+
+// ---------------------------------------------------------------------------
+// Height field computation
+// ---------------------------------------------------------------------------
+
+interface HeightField {
+  /** Number of columns (x direction) */
+  cols: number;
+  /** Number of rows (y direction) */
+  rows: number;
+  /** Height values, row-major [row * cols + col] */
+  heights: Float32Array;
+  /** Grid origin (min x, min y of bounding box) */
+  originX: number;
+  originY: number;
+  /** Boolean mask: true if point is inside the buildable polygon */
+  insideMask: Uint8Array;
+}
+
+/**
+ * Build a height field grid over the buildable footprint and compute
+ * the maximum allowed height at each sample point.
+ */
+function buildHeightField(
+  buildablePolygon: Point2D[],
+  input: VolumeInput,
+  roads: Road[],
+  nonRoadEdges: SiteEdge[],
+  northEdges: SiteEdge[],
+): HeightField {
+  const { zoning } = input;
+
+  // Regulation params
+  const roadParams = getRoadSetbackParams(zoning.district);
+  const adjParams = getAdjacentSetbackParams(zoning.district);
+  const northParams = getNorthSetbackParams(zoning.district);
+  const absLimit = getAbsoluteHeightLimit(zoning.absoluteHeightLimit);
+
+  // Bounding box of buildable polygon
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const v of buildablePolygon) {
+    if (v.x < minX) minX = v.x;
+    if (v.y < minY) minY = v.y;
+    if (v.x > maxX) maxX = v.x;
+    if (v.y > maxY) maxY = v.y;
+  }
+
+  const cols = Math.max(1, Math.ceil((maxX - minX) / GRID_RESOLUTION) + 1);
+  const rows = Math.max(1, Math.ceil((maxY - minY) / GRID_RESOLUTION) + 1);
+  const totalPoints = rows * cols;
+
+  const heights = new Float32Array(totalPoints);
+  const insideMask = new Uint8Array(totalPoints);
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const idx = row * cols + col;
+      const point: Point2D = {
+        x: minX + col * GRID_RESOLUTION,
+        y: minY + row * GRID_RESOLUTION,
+      };
+
+      // Check if point is inside buildable polygon
+      if (!isInsidePolygon(point, buildablePolygon)) {
+        heights[idx] = 0;
+        insideMask[idx] = 0;
+        continue;
+      }
+
+      insideMask[idx] = 1;
+
+      // Start with absolute height limit
+      let h = absLimit;
+
+      // Road setback (道路斜線制限) - check all roads
+      for (const road of roads) {
+        const roadH = calculateRoadSetbackHeight(
+          point,
+          road,
+          roadParams.slopeRatio,
+          roadParams.applicationDistance,
+        );
+        if (roadH < h) h = roadH;
+      }
+
+      // Adjacent setback (隣地斜線制限) - check all non-road, non-north edges
+      for (const edge of nonRoadEdges) {
+        const adjH = calculateAdjacentSetbackHeight(
+          point,
+          edge.start,
+          edge.end,
+          adjParams.riseHeight,
+          adjParams.slopeRatio,
+        );
+        if (adjH < h) h = adjH;
+      }
+
+      // North setback (北側斜線制限) - only if applicable
+      if (northParams !== null) {
+        for (const edge of northEdges) {
+          const northH = calculateNorthSetbackHeight(
+            point,
+            edge.start,
+            edge.end,
+            northParams.riseHeight,
+            northParams.slopeRatio,
+          );
+          if (northH < h) h = northH;
+        }
+      }
+
+      // Ensure non-negative
+      heights[idx] = Math.max(0, h);
+    }
+  }
+
+  return { cols, rows, heights, originX: minX, originY: minY, insideMask };
+}
+
+// ---------------------------------------------------------------------------
+// Mesh generation from height field
+// ---------------------------------------------------------------------------
+
+interface MeshData {
+  vertices: Float32Array;
+  indices: Uint32Array;
+}
+
+/**
+ * Build an individual setback envelope for a specific restriction type.
+ * Returns the height field evaluated with only that restriction,
+ * clamped to the combined envelope height to avoid showing
+ * geometry above the actual envelope.
+ */
+function buildSetbackHeightField(
+  buildablePolygon: Point2D[],
+  combinedHeights: HeightField,
+  evaluator: (point: Point2D) => number,
+): HeightField {
+  const { cols, rows, originX, originY, insideMask } = combinedHeights;
+  const heights = new Float32Array(rows * cols);
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const idx = row * cols + col;
+      if (insideMask[idx] === 0) {
+        heights[idx] = 0;
+        continue;
+      }
+
+      const point: Point2D = {
+        x: originX + col * GRID_RESOLUTION,
+        y: originY + row * GRID_RESOLUTION,
+      };
+
+      const restrictionH = evaluator(point);
+      // Clamp to the combined envelope so individual layers don't exceed it
+      heights[idx] = Math.max(0, Math.min(restrictionH, combinedHeights.heights[idx]));
+    }
+  }
+
+  return { cols, rows, heights, originX, originY, insideMask };
+}
+
+/**
+ * Convert a height field into a triangle mesh.
+ * For each grid cell with at least one inside vertex, create:
+ *  - 2 triangles for the top surface
+ *  - Ground plane vertices at z=0 (for side walls where height drops to 0)
+ */
+function heightFieldToMesh(field: HeightField): MeshData {
+  const { cols, rows, heights, originX, originY, insideMask } = field;
+
+  // Pre-allocate vertex and index arrays (upper bounds)
+  // Each vertex: x, y, z (3 floats)
+  const vertexList: number[] = [];
+  const indexList: number[] = [];
+
+  // Map from grid index to vertex index for the top surface
+  const vertexMap = new Int32Array(rows * cols).fill(-1);
+  let vertexCount = 0;
+
+  // Create top surface vertices for all inside points
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const idx = row * cols + col;
+      if (insideMask[idx] === 0) continue;
+
+      vertexMap[idx] = vertexCount;
+      // Three.js coords: X=east, Y=up(height), Z=north
+      vertexList.push(
+        originX + col * GRID_RESOLUTION,  // X (east)
+        heights[idx],                      // Y (up = height)
+        originY + row * GRID_RESOLUTION,   // Z (north)
+      );
+      vertexCount++;
+    }
+  }
+
+  // Create ground plane vertices (z=0) for all inside points
+  const groundVertexOffset = vertexCount;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const idx = row * cols + col;
+      if (insideMask[idx] === 0) continue;
+
+      // Three.js coords: ground plane at Y=0
+      vertexList.push(
+        originX + col * GRID_RESOLUTION,  // X (east)
+        0,                                 // Y (ground level)
+        originY + row * GRID_RESOLUTION,   // Z (north)
+      );
+      vertexCount++;
+    }
+  }
+
+  // Create top surface triangles
+  for (let row = 0; row < rows - 1; row++) {
+    for (let col = 0; col < cols - 1; col++) {
+      const i00 = row * cols + col;
+      const i10 = row * cols + (col + 1);
+      const i01 = (row + 1) * cols + col;
+      const i11 = (row + 1) * cols + (col + 1);
+
+      // All four corners must be inside
+      if (
+        insideMask[i00] === 0 ||
+        insideMask[i10] === 0 ||
+        insideMask[i01] === 0 ||
+        insideMask[i11] === 0
+      ) {
+        continue;
+      }
+
+      const v00 = vertexMap[i00];
+      const v10 = vertexMap[i10];
+      const v01 = vertexMap[i01];
+      const v11 = vertexMap[i11];
+
+      // Triangle 1: (00, 10, 01)
+      indexList.push(v00, v10, v01);
+      // Triangle 2: (10, 11, 01)
+      indexList.push(v10, v11, v01);
+    }
+  }
+
+  // Create side wall triangles along the boundary
+  // Detect boundary edges: inside cells adjacent to outside cells
+  for (let row = 0; row < rows - 1; row++) {
+    for (let col = 0; col < cols - 1; col++) {
+      const idx = row * cols + col;
+      const idxRight = row * cols + (col + 1);
+      const idxUp = (row + 1) * cols + col;
+
+      // Right edge: if current is inside and right is outside (or vice versa)
+      if (insideMask[idx] !== insideMask[idxRight]) {
+        const insideIdx = insideMask[idx] ? idx : idxRight;
+        const topV = vertexMap[insideIdx];
+        if (topV >= 0) {
+          // Find the corresponding ground vertex
+          // Ground vertices are offset by groundVertexOffset, in same order as top vertices
+          const groundV = groundVertexOffset + topV;
+          // Simple side: connect top to ground (degenerate, but sufficient for visualization)
+          // A proper side wall would need the adjacent vertex too - handled below
+        }
+      }
+
+      // We will use a simpler approach: create side walls for boundary edges of the top surface
+    }
+  }
+
+  // Create ground plane triangles (same topology as top surface, at z=0)
+  // Reuse the ground vertices which are at offset groundVertexOffset
+  // Ground vertex for top vertex v is at groundVertexOffset + v (same relative index)
+  for (let row = 0; row < rows - 1; row++) {
+    for (let col = 0; col < cols - 1; col++) {
+      const i00 = row * cols + col;
+      const i10 = row * cols + (col + 1);
+      const i01 = (row + 1) * cols + col;
+      const i11 = (row + 1) * cols + (col + 1);
+
+      if (
+        insideMask[i00] === 0 ||
+        insideMask[i10] === 0 ||
+        insideMask[i01] === 0 ||
+        insideMask[i11] === 0
+      ) {
+        continue;
+      }
+
+      const v00 = groundVertexOffset + vertexMap[i00];
+      const v10 = groundVertexOffset + vertexMap[i10];
+      const v01 = groundVertexOffset + vertexMap[i01];
+      const v11 = groundVertexOffset + vertexMap[i11];
+
+      // Winding reversed for bottom face (facing down)
+      indexList.push(v00, v01, v10);
+      indexList.push(v10, v01, v11);
+    }
+  }
+
+  // Side walls: For each boundary edge of the top surface grid,
+  // create a quad (2 triangles) connecting top and ground vertices.
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const idx = row * cols + col;
+      if (insideMask[idx] === 0) continue;
+
+      const topV = vertexMap[idx];
+      const groundV = groundVertexOffset + topV;
+
+      // Check each of 4 neighbors; if neighbor is outside, create wall edge
+      const neighbors = [
+        { dr: 0, dc: -1 }, // left
+        { dr: 0, dc: 1 },  // right
+        { dr: -1, dc: 0 }, // down
+        { dr: 1, dc: 0 },  // up
+      ];
+
+      for (const { dr, dc } of neighbors) {
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) {
+          // Out of grid bounds = boundary
+          // Need an adjacent inside point along the boundary to form a wall quad
+          continue;
+        }
+        const nIdx = nr * cols + nc;
+        if (insideMask[nIdx] !== 0) continue; // not a boundary
+
+        // This is a boundary edge. Find the two vertices that form this edge.
+        // For a proper wall, we need the next vertex along the boundary direction.
+        // We handle this by looking at the perpendicular neighbors.
+        // For left/right walls (dc != 0): the edge runs vertically, check row+1
+        // For up/down walls (dr != 0): the edge runs horizontally, check col+1
+        let adjRow: number, adjCol: number;
+        if (dc !== 0) {
+          // Vertical edge: pair with (row+1, col)
+          adjRow = row + 1;
+          adjCol = col;
+        } else {
+          // Horizontal edge: pair with (row, col+1)
+          adjRow = row;
+          adjCol = col + 1;
+        }
+
+        if (adjRow < 0 || adjRow >= rows || adjCol < 0 || adjCol >= cols) continue;
+        const adjIdx = adjRow * cols + adjCol;
+        if (insideMask[adjIdx] === 0) continue;
+
+        const adjTopV = vertexMap[adjIdx];
+        const adjGroundV = groundVertexOffset + adjTopV;
+
+        // Quad: (topV, adjTopV, adjGroundV, groundV) -> 2 triangles
+        indexList.push(topV, adjTopV, adjGroundV);
+        indexList.push(topV, adjGroundV, groundV);
+      }
+    }
+  }
+
+  return {
+    vertices: new Float32Array(vertexList),
+    indices: new Uint32Array(indexList),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate the building volume envelope for the given site and zoning.
+ *
+ * This is the CORE integration function that:
+ * 1. Gets regulation params from zoning
+ * 2. Applies wall setback to get buildable footprint
+ * 3. Creates a grid of sample points across the site
+ * 4. At each point, calculates max allowed height from ALL setback rules
+ * 5. Takes the minimum (most restrictive)
+ * 6. Converts height field to 3D mesh (vertices + indices)
+ */
+export function generateEnvelope(input: VolumeInput): VolumeResult {
+  const { site, zoning, roads } = input;
+
+  // 1. Calculate coverage and floor area limits
+  const maxCoverageArea = calculateMaxCoverage(site, zoning);
+  const maxFloorArea = calculateMaxFloorArea(site, zoning, roads);
+
+  // 2. Apply wall setback to get buildable footprint
+  const buildablePolygon = applyWallSetback(site.vertices, zoning.wallSetback);
+
+  // 3. Classify edges
+  const siteEdges = getSiteEdges(site.vertices);
+  const nonRoadEdges: SiteEdge[] = [];
+  for (const edge of siteEdges) {
+    if (!isRoadEdge(edge, roads)) {
+      nonRoadEdges.push(edge);
+    }
+  }
+  const northEdges = getNorthEdges(nonRoadEdges, site.vertices);
+
+  // 4. Build combined height field (minimum of all restrictions)
+  const combinedField = buildHeightField(
+    buildablePolygon,
+    input,
+    roads,
+    nonRoadEdges,
+    northEdges,
+  );
+
+  // 5. Determine max height and max floors from the height field
+  let maxHeight = 0;
+  for (let i = 0; i < combinedField.heights.length; i++) {
+    if (combinedField.insideMask[i] === 1 && combinedField.heights[i] > maxHeight) {
+      maxHeight = combinedField.heights[i];
+    }
+  }
+  // Apply absolute height limit cap
+  const absLimit = getAbsoluteHeightLimit(zoning.absoluteHeightLimit);
+  if (maxHeight > absLimit) maxHeight = absLimit;
+  const maxFloors = Math.floor(maxHeight / FLOOR_HEIGHT);
+
+  // 6. Convert combined height field to mesh
+  const combinedMesh = heightFieldToMesh(combinedField);
+
+  // 7. Build individual setback envelope meshes for layer toggling
+
+  // Get regulation params for individual evaluations
+  const roadParams = getRoadSetbackParams(zoning.district);
+  const adjParams = getAdjacentSetbackParams(zoning.district);
+  const northParams = getNorthSetbackParams(zoning.district);
+
+  // Road setback envelope
+  let roadEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (roads.length > 0) {
+    const roadField = buildSetbackHeightField(
+      buildablePolygon,
+      combinedField,
+      (point) => {
+        let h = Infinity;
+        for (const road of roads) {
+          const rh = calculateRoadSetbackHeight(
+            point,
+            road,
+            roadParams.slopeRatio,
+            roadParams.applicationDistance,
+          );
+          if (rh < h) h = rh;
+        }
+        return h;
+      },
+    );
+    roadEnvelope = heightFieldToMesh(roadField);
+  }
+
+  // Adjacent setback envelope
+  let adjacentEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (nonRoadEdges.length > 0) {
+    const adjField = buildSetbackHeightField(
+      buildablePolygon,
+      combinedField,
+      (point) => {
+        let h = Infinity;
+        for (const edge of nonRoadEdges) {
+          const ah = calculateAdjacentSetbackHeight(
+            point,
+            edge.start,
+            edge.end,
+            adjParams.riseHeight,
+            adjParams.slopeRatio,
+          );
+          if (ah < h) h = ah;
+        }
+        return h;
+      },
+    );
+    adjacentEnvelope = heightFieldToMesh(adjField);
+  }
+
+  // North setback envelope
+  let northEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (northParams !== null && northEdges.length > 0) {
+    const northField = buildSetbackHeightField(
+      buildablePolygon,
+      combinedField,
+      (point) => {
+        let h = Infinity;
+        for (const edge of northEdges) {
+          const nh = calculateNorthSetbackHeight(
+            point,
+            edge.start,
+            edge.end,
+            northParams.riseHeight,
+            northParams.slopeRatio,
+          );
+          if (nh < h) h = nh;
+        }
+        return h;
+      },
+    );
+    northEnvelope = heightFieldToMesh(northField);
+  }
+
+  // Absolute height envelope (flat plane at the limit)
+  let absoluteHeightEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (zoning.absoluteHeightLimit !== null) {
+    const absField = buildSetbackHeightField(
+      buildablePolygon,
+      combinedField,
+      () => zoning.absoluteHeightLimit!,
+    );
+    absoluteHeightEnvelope = heightFieldToMesh(absField);
+  }
+
+  return {
+    maxFloorArea,
+    maxCoverageArea,
+    maxHeight: Math.round(maxHeight * 100) / 100,
+    maxFloors,
+    envelopeVertices: combinedMesh.vertices,
+    envelopeIndices: combinedMesh.indices,
+    setbackEnvelopes: {
+      road: roadEnvelope,
+      adjacent: adjacentEnvelope,
+      north: northEnvelope,
+      absoluteHeight: absoluteHeightEnvelope,
+      shadow: null, // Shadow calculation is complex and handled separately
+    },
+  };
+}
