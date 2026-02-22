@@ -11,6 +11,7 @@ import { getAbsoluteHeightLimit } from './absolute-height';
 import { calculateRoadSetbackHeight } from './setback-road';
 import { calculateAdjacentSetbackHeight } from './setback-adjacent';
 import { calculateNorthSetbackHeight } from './setback-north';
+import { calculateHeightDistrictLimit } from './height-district';
 import { applyWallSetback } from './wall-setback';
 import {
   getRoadSetbackParams,
@@ -31,7 +32,7 @@ const HORIZONTAL_THRESHOLD = 0.3; // radians (~17 degrees)
 // Edge classification helpers
 // ---------------------------------------------------------------------------
 
-interface SiteEdge {
+export interface SiteEdge {
   start: Point2D;
   end: Point2D;
 }
@@ -39,7 +40,7 @@ interface SiteEdge {
 /**
  * Get all site boundary edges as segments.
  */
-function getSiteEdges(vertices: Point2D[]): SiteEdge[] {
+export function getSiteEdges(vertices: Point2D[]): SiteEdge[] {
   const edges: SiteEdge[] = [];
   const n = vertices.length;
   for (let i = 0; i < n; i++) {
@@ -52,7 +53,7 @@ function getSiteEdges(vertices: Point2D[]): SiteEdge[] {
  * Determine whether a site edge coincides with a road edge.
  * Uses distance threshold to match edges (within 0.1m tolerance).
  */
-function isRoadEdge(edge: SiteEdge, roads: Road[]): boolean {
+export function isRoadEdge(edge: SiteEdge, roads: Road[]): boolean {
   const midX = (edge.start.x + edge.end.x) / 2;
   const midY = (edge.start.y + edge.end.y) / 2;
   const mid: Point2D = { x: midX, y: midY };
@@ -73,7 +74,7 @@ function isRoadEdge(edge: SiteEdge, roads: Road[]): boolean {
  * the top 25% of the site's y range AND whose angle from horizontal is
  * below HORIZONTAL_THRESHOLD.
  */
-function getNorthEdges(
+export function getNorthEdges(
   nonRoadEdges: SiteEdge[],
   vertices: Point2D[],
 ): SiteEdge[] {
@@ -146,7 +147,7 @@ function buildHeightField(
   buildablePolygon: Point2D[],
   input: VolumeInput,
   roads: Road[],
-  nonRoadEdges: SiteEdge[],
+  adjacentEdges: SiteEdge[],
   northEdges: SiteEdge[],
 ): HeightField {
   const { zoning } = input;
@@ -204,8 +205,8 @@ function buildHeightField(
         if (roadH < h) h = roadH;
       }
 
-      // Adjacent setback (隣地斜線制限) - check all non-road, non-north edges
-      for (const edge of nonRoadEdges) {
+      // Adjacent setback (隣地斜線制限) - check adjacent edges only (not north)
+      for (const edge of adjacentEdges) {
         const adjH = calculateAdjacentSetbackHeight(
           point,
           edge.start,
@@ -227,6 +228,28 @@ function buildHeightField(
             northParams.slopeRatio,
           );
           if (northH < h) h = northH;
+        }
+      }
+
+      // Height district (高度地区) - applies to all non-road edges
+      if (input.zoning.heightDistrict.type !== '指定なし') {
+        for (const edge of adjacentEdges) {
+          const hdH = calculateHeightDistrictLimit(
+            point,
+            edge.start,
+            edge.end,
+            input.zoning.heightDistrict,
+          );
+          if (hdH < h) h = hdH;
+        }
+        for (const edge of northEdges) {
+          const hdH = calculateHeightDistrictLimit(
+            point,
+            edge.start,
+            edge.end,
+            input.zoning.heightDistrict,
+          );
+          if (hdH < h) h = hdH;
         }
       }
 
@@ -520,12 +543,19 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
   }
   const northEdges = getNorthEdges(nonRoadEdges, site.vertices);
 
+  // Separate adjacent-only edges (exclude north edges to avoid double-application)
+  const adjacentOnlyEdges = nonRoadEdges.filter(
+    (edge) => !northEdges.some(
+      (ne) => ne.start === edge.start && ne.end === edge.end
+    )
+  );
+
   // 4. Build combined height field (minimum of all restrictions)
   const combinedField = buildHeightField(
     buildablePolygon,
     input,
     roads,
-    nonRoadEdges,
+    adjacentOnlyEdges,
     northEdges,
   );
 
@@ -539,7 +569,23 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
   // Apply absolute height limit cap
   const absLimit = getAbsoluteHeightLimit(zoning.absoluteHeightLimit);
   if (maxHeight > absLimit) maxHeight = absLimit;
-  const maxFloors = Math.floor(maxHeight / FLOOR_HEIGHT);
+
+  // Calculate maxFloors from user-provided floor heights or default
+  let maxFloors: number;
+  if (input.floorHeights && input.floorHeights.length > 0) {
+    maxFloors = 0;
+    let accumulated = 0;
+    for (const fh of input.floorHeights) {
+      accumulated += fh;
+      if (accumulated <= maxHeight + 0.01) { // small epsilon for floating point
+        maxFloors++;
+      } else {
+        break;
+      }
+    }
+  } else {
+    maxFloors = Math.floor(maxHeight / FLOOR_HEIGHT);
+  }
 
   // 6. Convert combined height field to mesh
   const combinedMesh = heightFieldToMesh(combinedField);
@@ -576,13 +622,13 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
 
   // Adjacent setback envelope
   let adjacentEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
-  if (nonRoadEdges.length > 0) {
+  if (adjacentOnlyEdges.length > 0) {
     const adjField = buildSetbackHeightField(
       buildablePolygon,
       combinedField,
       (point) => {
         let h = Infinity;
-        for (const edge of nonRoadEdges) {
+        for (const edge of adjacentOnlyEdges) {
           const ah = calculateAdjacentSetbackHeight(
             point,
             edge.start,

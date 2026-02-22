@@ -53,7 +53,12 @@ export type FireDistrict = '防火地域' | '準防火地域' | '指定なし';
 /** Height district (高度地区) */
 export interface HeightDistrict {
   type: '第一種' | '第二種' | '第三種' | '指定なし';
-  maxHeight?: number;
+  /** Max height at boundary (overrides default) */
+  maxHeightAtBoundary?: number;
+  /** Slope ratio (overrides default) */
+  slopeRatio?: number;
+  /** Absolute max height (overrides default) */
+  absoluteMax?: number;
 }
 
 /** Shadow regulation parameters (日影規制) */
@@ -118,6 +123,8 @@ export interface VolumeInput {
   roads: Road[];
   /** Latitude for shadow calculation (sun position) */
   latitude: number;
+  /** Optional per-floor heights in meters. If provided, maxFloors is calculated from these. */
+  floorHeights?: number[];
 }
 
 /** Result of volume calculation */

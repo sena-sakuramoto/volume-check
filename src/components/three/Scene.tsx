@@ -12,6 +12,7 @@ import { Suspense } from 'react';
 import { SiteGround } from './SiteGround';
 import { VolumeEnvelope } from './VolumeEnvelope';
 import { SetbackLines } from './SetbackLines';
+import { FloorPlates } from './FloorPlates';
 import type { VolumeResult, SiteBoundary, Road, ZoningData } from '@/engine/types';
 
 interface SceneProps {
@@ -19,12 +20,14 @@ interface SceneProps {
   roads: Road[];
   zoning: ZoningData | null;
   volumeResult: VolumeResult | null;
+  floorHeights: number[];
   layers: {
     road: boolean;
     adjacent: boolean;
     north: boolean;
     absoluteHeight: boolean;
     shadow: boolean;
+    floorPlates: boolean;
   };
 }
 
@@ -63,7 +66,7 @@ function computeTarget(site: SiteBoundary | null): [number, number, number] {
   return [cx, 3, cy];
 }
 
-export function Scene({ site, roads, zoning, volumeResult, layers }: SceneProps) {
+export function Scene({ site, roads, zoning, volumeResult, floorHeights, layers }: SceneProps) {
   const cameraPos = useMemo(() => computeCameraPosition(site), [site]);
   const target = useMemo(() => computeTarget(site), [site]);
 
@@ -108,6 +111,17 @@ export function Scene({ site, roads, zoning, volumeResult, layers }: SceneProps)
 
         {/* Volume envelope mesh */}
         {volumeResult && <VolumeEnvelope result={volumeResult} layers={layers} />}
+
+        {/* Floor plates */}
+        {site && zoning && volumeResult && (
+          <FloorPlates
+            site={site}
+            zoning={zoning}
+            floorHeights={floorHeights}
+            maxHeight={volumeResult.maxHeight}
+            visible={layers.floorPlates}
+          />
+        )}
 
         {/* Setback slope lines (斜線) */}
         {site && zoning && (

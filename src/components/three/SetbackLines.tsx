@@ -8,7 +8,10 @@ import {
   getRoadSetbackParams,
   getAdjacentSetbackParams,
   getNorthSetbackParams,
-} from '@/engine/zoning';
+  getSiteEdges,
+  isRoadEdge,
+  getNorthEdges,
+} from '@/engine';
 
 interface SetbackLinesProps {
   site: SiteBoundary;
@@ -111,9 +114,8 @@ export function SetbackLines({ site, roads, zoning, layers }: SetbackLinesProps)
     return new THREE.BufferGeometry().setFromPoints(points);
   }, [roads, roadParams, absLimit, layers.road]);
 
-  // ── Identify non-road edges → north vs adjacent ──
+  // ── Identify non-road edges → north vs adjacent (using engine functions) ──
   const { northEdgesList, adjacentEdgesList } = useMemo(() => {
-    const n = site.vertices.length;
     type Edge = {
       sx: number;
       sy: number;
@@ -122,65 +124,28 @@ export function SetbackLines({ site, roads, zoning, layers }: SetbackLinesProps)
       inX: number;
       inY: number;
     };
-    const nonRoadEdges: Edge[] = [];
 
-    for (let i = 0; i < n; i++) {
-      const s = site.vertices[i];
-      const e = site.vertices[(i + 1) % n];
-      const dx = e.x - s.x;
-      const dy = e.y - s.y;
+    const allEdges = getSiteEdges(site.vertices);
+    const nonRoadEdges = allEdges.filter((e) => !isRoadEdge(e, roads));
+    const northSiteEdges = getNorthEdges(nonRoadEdges, site.vertices);
+
+    // Build Edge objects with inward normals for rendering
+    const toRenderEdge = (se: { start: { x: number; y: number }; end: { x: number; y: number } }): Edge => {
+      const dx = se.end.x - se.start.x;
+      const dy = se.end.y - se.start.y;
       const len = Math.sqrt(dx * dx + dy * dy);
-      if (len === 0) continue;
+      const inX = len > 0 ? (isCCW ? -dy / len : dy / len) : 0;
+      const inY = len > 0 ? (isCCW ? dx / len : -dx / len) : 0;
+      return { sx: se.start.x, sy: se.start.y, ex: se.end.x, ey: se.end.y, inX, inY };
+    };
 
-      // Inward normal
-      const inX = isCCW ? -dy / len : dy / len;
-      const inY = isCCW ? dx / len : -dx / len;
+    const northSet = new Set(northSiteEdges);
+    const adjacentSiteEdges = nonRoadEdges.filter((e) => !northSet.has(e));
 
-      // Check if road edge
-      const midX = (s.x + e.x) / 2;
-      const midY = (s.y + e.y) / 2;
-      let isRoad = false;
-      for (const road of roads) {
-        const rdx = road.edgeEnd.x - road.edgeStart.x;
-        const rdy = road.edgeEnd.y - road.edgeStart.y;
-        const rLen = Math.sqrt(rdx * rdx + rdy * rdy);
-        if (rLen === 0) continue;
-        const t =
-          ((midX - road.edgeStart.x) * rdx + (midY - road.edgeStart.y) * rdy) /
-          (rLen * rLen);
-        if (t < -0.1 || t > 1.1) continue;
-        const projX = road.edgeStart.x + t * rdx;
-        const projY = road.edgeStart.y + t * rdy;
-        const dist = Math.sqrt((midX - projX) ** 2 + (midY - projY) ** 2);
-        if (dist < 0.5) {
-          isRoad = true;
-          break;
-        }
-      }
-
-      if (!isRoad) {
-        nonRoadEdges.push({ sx: s.x, sy: s.y, ex: e.x, ey: e.y, inX, inY });
-      }
-    }
-
-    // Classify north vs adjacent by Y position
-    const allY = site.vertices.map((v) => v.y);
-    const maxY = Math.max(...allY);
-    const minY = Math.min(...allY);
-    const yThreshold = maxY - (maxY - minY) * 0.25;
-
-    const north: Edge[] = [];
-    const adjacent: Edge[] = [];
-    for (const edge of nonRoadEdges) {
-      const midY = (edge.sy + edge.ey) / 2;
-      if (midY >= yThreshold) {
-        north.push(edge);
-      } else {
-        adjacent.push(edge);
-      }
-    }
-
-    return { northEdgesList: north, adjacentEdgesList: adjacent };
+    return {
+      northEdgesList: northSiteEdges.map(toRenderEdge),
+      adjacentEdgesList: adjacentSiteEdges.map(toRenderEdge),
+    };
   }, [site.vertices, roads, isCCW]);
 
   // ── North setback slope lines (北側斜線) ──

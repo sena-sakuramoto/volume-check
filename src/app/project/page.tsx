@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import type { SiteBoundary, Road, ZoningData, VolumeResult } from '@/engine/types';
 import { generateEnvelope } from '@/engine';
@@ -10,6 +10,7 @@ import { LayerControls } from '@/components/ui/LayerControls';
 import { FloorEditor } from '@/components/ui/FloorEditor';
 import { AiChat } from '@/components/chat/AiChat';
 import { DEMO_SITE, DEMO_ROADS, DEMO_ZONING } from '@/lib/demo-data';
+import { loadProject } from '@/lib/project-storage';
 
 const Scene = dynamic(
   () => import('@/components/three/Scene').then((m) => ({ default: m.Scene })),
@@ -29,6 +30,7 @@ const DEFAULT_LAYERS: Record<string, boolean> = {
   north: true,
   absoluteHeight: true,
   shadow: false,
+  floorPlates: true,
 };
 
 type MobileTab = 'input' | '3d' | 'result' | 'ai';
@@ -51,15 +53,40 @@ export default function ProjectPage() {
   const [activeTab, setActiveTab] = useState<MobileTab>('input');
   const [showLayers, setShowLayers] = useState(false);
 
+  // Load saved project on mount
+  useEffect(() => {
+    const saved = loadProject();
+    if (saved) {
+      setSite(saved.site);
+      setRoads(saved.roads);
+      setZoning(saved.zoning);
+      setLatitude(saved.latitude);
+      if (saved.floorHeights.length > 0) setFloorHeights(saved.floorHeights);
+    }
+  }, []);
+
+  const [calcError, setCalcError] = useState<string | null>(null);
+
   // Calculate volume result whenever inputs change
   const volumeResult: VolumeResult | null = useMemo(() => {
-    if (!site || !zoning || roads.length === 0) return null;
-    try {
-      return generateEnvelope({ site, zoning, roads, latitude });
-    } catch {
+    if (!site || !zoning || roads.length === 0) {
+      setCalcError(null);
       return null;
     }
-  }, [site, zoning, roads, latitude]);
+    try {
+      setCalcError(null);
+      return generateEnvelope({
+        site,
+        zoning,
+        roads,
+        latitude,
+        floorHeights: floorHeights.length > 0 ? floorHeights : undefined,
+      });
+    } catch (e) {
+      setCalcError(e instanceof Error ? e.message : '計算エラーが発生しました');
+      return null;
+    }
+  }, [site, zoning, roads, latitude, floorHeights]);
 
   // Derive effective floor heights from maxFloors
   const maxFloors = volumeResult?.maxFloors ?? 0;
@@ -97,6 +124,7 @@ export default function ProjectPage() {
     north: layers.north ?? false,
     absoluteHeight: layers.absoluteHeight ?? false,
     shadow: layers.shadow ?? false,
+    floorPlates: layers.floorPlates ?? true,
   };
 
   // Check if bottom sheet should be visible (mobile only)
@@ -142,18 +170,31 @@ export default function ProjectPage() {
 
         {/* Center: 3D Scene */}
         <main className="flex-1 relative">
+          {calcError && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 rounded-lg bg-red-900/90 border border-red-700 px-4 py-2 text-xs text-red-200 shadow-lg">
+              {calcError}
+            </div>
+          )}
           <Scene
             site={site}
             roads={roads}
             zoning={zoning}
             volumeResult={volumeResult}
+            floorHeights={effectiveFloorHeights}
             layers={typedLayers}
           />
         </main>
 
         {/* Right Sidebar */}
         <aside className="w-72 shrink-0 border-l border-gray-800 overflow-y-auto">
-          <RegulationPanel zoning={zoning} result={volumeResult} />
+          <RegulationPanel
+              zoning={zoning}
+              result={volumeResult}
+              site={site}
+              roads={roads}
+              floorHeights={effectiveFloorHeights}
+              latitude={latitude}
+            />
         </aside>
       </div>
 
@@ -177,6 +218,7 @@ export default function ProjectPage() {
             roads={roads}
             zoning={zoning}
             volumeResult={volumeResult}
+            floorHeights={effectiveFloorHeights}
             layers={typedLayers}
           />
         </div>
@@ -227,7 +269,14 @@ export default function ProjectPage() {
             )}
 
             {activeTab === 'result' && (
-              <RegulationPanel zoning={zoning} result={volumeResult} />
+              <RegulationPanel
+              zoning={zoning}
+              result={volumeResult}
+              site={site}
+              roads={roads}
+              floorHeights={effectiveFloorHeights}
+              latitude={latitude}
+            />
             )}
 
             {activeTab === 'ai' && (

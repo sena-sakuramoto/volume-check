@@ -169,6 +169,8 @@ function parseNumericValue(val: string | number | undefined): number | undefined
 // Main handler
 // ---------------------------------------------------------------------------
 
+const DEBUG = process.env.NODE_ENV === 'development';
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -220,7 +222,7 @@ async function tryFetchZoning(
     .replace('{x}', String(tileX))
     .replace('{y}', String(tileY));
 
-  console.log(`[zoning-lookup] Fetching tile z=${z} x=${tileX} y=${tileY}: ${url}`);
+  if (DEBUG) console.log(`[zoning-lookup] Fetching tile z=${z} x=${tileX} y=${tileY}: ${url}`);
 
   const response = await fetch(url);
 
@@ -236,10 +238,10 @@ async function tryFetchZoning(
   const tile = new VectorTile(pbf);
 
   const layerNames = Object.keys(tile.layers);
-  console.log(`[zoning-lookup] Available layers: ${layerNames.join(', ')}`);
+  if (DEBUG) console.log(`[zoning-lookup] Available layers: ${layerNames.join(', ')}`);
 
   if (layerNames.length === 0) {
-    console.warn('[zoning-lookup] No layers found in tile');
+    if (DEBUG) console.warn('[zoning-lookup] No layers found in tile');
     return null;
   }
 
@@ -253,26 +255,23 @@ async function tryFetchZoning(
   }
 
   const layer = tile.layers[layerName];
-  console.log(`[zoning-lookup] Using layer "${layerName}" with ${layer.length} features`);
+  if (DEBUG) console.log(`[zoning-lookup] Using layer "${layerName}" with ${layer.length} features`);
 
   if (layer.length === 0) {
     return null;
   }
 
-  // Log properties of first feature for debugging
   const debugFeature = layer.feature(0);
-  const debugProps = debugFeature.properties;
-  console.log(
-    '[zoning-lookup] First feature properties:',
-    JSON.stringify(debugProps, null, 2)
-  );
+  if (DEBUG) {
+    console.log('[zoning-lookup] First feature properties:', JSON.stringify(debugFeature.properties, null, 2));
+  }
 
   const extent = debugFeature.extent;
   const { pixelX, pixelY } = latLngToPixel(lat, lng, z, tileX, tileY, extent);
 
-  console.log(
-    `[zoning-lookup] Point in tile coords: pixelX=${pixelX.toFixed(1)}, pixelY=${pixelY.toFixed(1)}, extent=${extent}`
-  );
+  if (DEBUG) {
+    console.log(`[zoning-lookup] Point in tile coords: pixelX=${pixelX.toFixed(1)}, pixelY=${pixelY.toFixed(1)}, extent=${extent}`);
+  }
 
   for (let i = 0; i < layer.length; i++) {
     const feature = layer.feature(i);
@@ -280,10 +279,7 @@ async function tryFetchZoning(
     if (pointInFeatureGeometry(pixelX, pixelY, feature)) {
       const props = feature.properties as Record<string, unknown>;
 
-      console.log(
-        `[zoning-lookup] Matched feature ${i} properties:`,
-        JSON.stringify(props, null, 2)
-      );
+      if (DEBUG) console.log(`[zoning-lookup] Matched feature ${i}:`, JSON.stringify(props, null, 2));
 
       const districtRaw = findProperty(props, DISTRICT_KEYS);
       const coverageRaw = findProperty(props, COVERAGE_KEYS);
@@ -304,6 +300,6 @@ async function tryFetchZoning(
     }
   }
 
-  console.log(`[zoning-lookup] No feature matched at z=${z}`);
+  if (DEBUG) console.log(`[zoning-lookup] No feature matched at z=${z}`);
   return null;
 }

@@ -7,8 +7,10 @@ import type {
   ZoningData,
   ZoningDistrict,
   FireDistrict,
+  HeightDistrict,
 } from '@/engine/types';
 import { getZoningDefaults } from '@/engine';
+import { PolygonSiteInput } from './PolygonSiteInput';
 
 /* ------------------------------------------------------------------ */
 /*  Analyze-site API response type                                     */
@@ -188,19 +190,21 @@ function buildZoningData(
     coverageRatio?: number;
     floorAreaRatio?: number;
     fireDistrict?: FireDistrict;
+    heightDistrict?: HeightDistrict;
+    isCornerLot?: boolean;
   },
 ): ZoningData {
   const defaults = getZoningDefaults(district);
   return {
     district,
     fireDistrict: overrides?.fireDistrict ?? '指定なし',
-    heightDistrict: { type: '指定なし' },
+    heightDistrict: overrides?.heightDistrict ?? { type: '指定なし' },
     coverageRatio: overrides?.coverageRatio ?? defaults.defaultCoverageRatio,
     floorAreaRatio: overrides?.floorAreaRatio ?? defaults.defaultFloorAreaRatio,
     absoluteHeightLimit: defaults.absoluteHeightLimit,
     wallSetback: defaults.wallSetback,
     shadowRegulation: defaults.shadowRegulation,
-    isCornerLot: false,
+    isCornerLot: overrides?.isCornerLot ?? false,
   };
 }
 
@@ -285,9 +289,28 @@ export function SiteInputPanel({
   const [farOverride, setFarOverride] = useState('');
   const [fireDistrict, setFireDistrict] = useState<FireDistrict>('指定なし');
 
-  const [roadWidth, setRoadWidth] = useState<number>(6);
-  const [customRoadWidth, setCustomRoadWidth] = useState('');
-  const [roadDirection, setRoadDirection] = useState<RoadDirection>('south');
+  const [heightDistrictType, setHeightDistrictType] = useState<HeightDistrict['type']>('指定なし');
+  const [isCornerLot, setIsCornerLot] = useState(false);
+  const [siteMode, setSiteMode] = useState<'rect' | 'polygon'>('rect');
+
+  // Multiple roads support
+  interface RoadConfig {
+    id: string;
+    width: number;
+    direction: RoadDirection;
+    customWidth: string;
+  }
+  const [roadConfigs, setRoadConfigs] = useState<RoadConfig[]>([
+    { id: '1', width: 6, direction: 'south', customWidth: '' },
+  ]);
+
+  // Keep legacy single-road state for compatibility with upload handler
+  const roadWidth = roadConfigs[0]?.width ?? 6;
+  const roadDirection = roadConfigs[0]?.direction ?? 'south';
+  const customRoadWidth = roadConfigs[0]?.customWidth ?? '';
+  const setRoadWidth = (w: number) => setRoadConfigs(prev => prev.map((r, i) => i === 0 ? { ...r, width: w } : r));
+  const setRoadDirection = (d: RoadDirection) => setRoadConfigs(prev => prev.map((r, i) => i === 0 ? { ...r, direction: d } : r));
+  const setCustomRoadWidth = (v: string) => setRoadConfigs(prev => prev.map((r, i) => i === 0 ? { ...r, customWidth: v } : r));
 
   const latLngRef = useRef<{ lat: number; lng: number } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -305,19 +328,31 @@ export function SiteInputPanel({
       covOvr?: number,
       farOvr?: number,
       fireDist?: FireDistrict,
+      hdType?: HeightDistrict['type'],
+      cornerLot?: boolean,
+      allRoads?: RoadConfig[],
     ) => {
-      const newSite = buildRectSite(w, d);
-      onSiteChange(newSite);
+      if (siteMode === 'rect') {
+        const newSite = buildRectSite(w, d);
+        onSiteChange(newSite);
+      }
+      const effectiveHD = hdType ?? heightDistrictType;
+      const effectiveCorner = cornerLot ?? isCornerLot;
       onZoningChange(
         buildZoningData(dist, {
           coverageRatio: covOvr,
           floorAreaRatio: farOvr,
           fireDistrict: fireDist,
+          heightDistrict: { type: effectiveHD },
+          isCornerLot: effectiveCorner,
         }),
       );
-      onRoadsChange([buildRoad(w, d, rw, rDir)]);
+      // Build roads from all configs
+      const configs = allRoads ?? roadConfigs;
+      const roads = configs.map((rc) => buildRoad(w, d, rc.width, rc.direction));
+      onRoadsChange(roads);
     },
-    [onSiteChange, onZoningChange, onRoadsChange],
+    [onSiteChange, onZoningChange, onRoadsChange, siteMode, heightDistrictType, isCornerLot, roadConfigs],
   );
 
   const tryUpdate = useCallback(
@@ -330,6 +365,9 @@ export function SiteInputPanel({
       covOvr?: number;
       farOvr?: number;
       fireDist?: FireDistrict;
+      hdType?: HeightDistrict['type'];
+      cornerLot?: boolean;
+      allRoads?: RoadConfig[];
     }) => {
       const w = overrides?.w ?? parseFloat(siteWidth);
       const d = overrides?.d ?? parseFloat(siteDepth);
@@ -349,7 +387,7 @@ export function SiteInputPanel({
 
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        updateScene(w, d, dist, rw, rDir, covParsed, farParsed, fireDist);
+        updateScene(w, d, dist, rw, rDir, covParsed, farParsed, fireDist, overrides?.hdType, overrides?.cornerLot, overrides?.allRoads);
       }, 80);
     },
     [
@@ -1010,91 +1048,273 @@ export function SiteInputPanel({
         </div>
       )}
 
-      {/* 5. 敷地形状 (矩形) */}
-      <div>
-        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
-          敷地形状 (矩形)
-        </label>
-        <div className="grid grid-cols-2 gap-2">
+      {/* 防火地域 / 角地 / 高度地区 */}
+      {selectedDistrict && (
+        <>
           <div>
-            <label className="block text-[10px] text-gray-400 mb-0.5">間口 (m)</label>
-            <input
-              type="number"
-              value={siteWidth}
-              onChange={(e) => handleSiteWidth(e.target.value)}
-              placeholder="10"
-              min="1"
-              step="0.5"
-              className="w-full rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
-            />
+            <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              防火地域
+            </label>
+            <div className="flex gap-1">
+              {(['指定なし', '準防火地域', '防火地域'] as FireDistrict[]).map((fd) => (
+                <button
+                  key={fd}
+                  onClick={() => {
+                    setFireDistrict(fd);
+                    tryUpdate({ fireDist: fd });
+                  }}
+                  className={`flex-1 rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                    fireDistrict === fd
+                      ? 'bg-red-600/80 text-white'
+                      : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                  }`}
+                >
+                  {fd === '指定なし' ? 'なし' : fd.replace('地域', '')}
+                </button>
+              ))}
+            </div>
           </div>
+
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isCornerLot}
+                onChange={(e) => {
+                  setIsCornerLot(e.target.checked);
+                  tryUpdate({ cornerLot: e.target.checked });
+                }}
+                className="rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 w-3.5 h-3.5"
+              />
+              <span className="text-[10px] text-gray-300">角地 (建ぺい率+10%)</span>
+            </label>
+          </div>
+
           <div>
-            <label className="block text-[10px] text-gray-400 mb-0.5">奥行 (m)</label>
-            <input
-              type="number"
-              value={siteDepth}
-              onChange={(e) => handleSiteDepth(e.target.value)}
-              placeholder="15"
-              min="1"
-              step="0.5"
-              className="w-full rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
-            />
+            <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              高度地区
+            </label>
+            <div className="flex gap-1">
+              {(['指定なし', '第一種', '第二種', '第三種'] as HeightDistrict['type'][]).map((hd) => (
+                <button
+                  key={hd}
+                  onClick={() => {
+                    setHeightDistrictType(hd);
+                    tryUpdate({ hdType: hd });
+                  }}
+                  className={`flex-1 rounded px-1.5 py-1 text-[10px] font-medium transition-colors ${
+                    heightDistrictType === hd
+                      ? 'bg-purple-600/80 text-white'
+                      : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                  }`}
+                >
+                  {hd === '指定なし' ? 'なし' : hd}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 5. 敷地形状 */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+            敷地形状
+          </label>
+          <div className="flex rounded overflow-hidden border border-gray-600">
+            <button
+              onClick={() => setSiteMode('rect')}
+              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                siteMode === 'rect'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              }`}
+            >
+              矩形
+            </button>
+            <button
+              onClick={() => setSiteMode('polygon')}
+              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                siteMode === 'polygon'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              }`}
+            >
+              多角形
+            </button>
           </div>
         </div>
-        {site && (
-          <div className="mt-1 text-[10px] text-gray-500">
-            敷地面積: <span className="font-mono text-gray-300">{site.area.toFixed(1)}</span> m²
-          </div>
+
+        {siteMode === 'rect' ? (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] text-gray-400 mb-0.5">間口 (m)</label>
+                <input
+                  type="number"
+                  value={siteWidth}
+                  onChange={(e) => handleSiteWidth(e.target.value)}
+                  placeholder="10"
+                  min="1"
+                  step="0.5"
+                  className="w-full rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 mb-0.5">奥行 (m)</label>
+                <input
+                  type="number"
+                  value={siteDepth}
+                  onChange={(e) => handleSiteDepth(e.target.value)}
+                  placeholder="15"
+                  min="1"
+                  step="0.5"
+                  className="w-full rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+            {site && (
+              <div className="mt-1 text-[10px] text-gray-500">
+                敷地面積: <span className="font-mono text-gray-300">{site.area.toFixed(1)}</span> m²
+              </div>
+            )}
+          </>
+        ) : (
+          <PolygonSiteInput onSiteChange={onSiteChange} />
         )}
       </div>
 
       {/* 6. 前面道路 */}
       <div>
-        <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
-          前面道路
-        </label>
-
-        <div className="flex gap-1 mb-1.5">
-          {ROAD_DIRECTION_OPTIONS.map(({ key, label }) => (
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+            前面道路
+          </label>
+          {roadConfigs.length < 4 && (
             <button
-              key={key}
-              onClick={() => handleRoadDirection(key)}
-              className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
-                roadDirection === key
-                  ? 'bg-gray-500 text-white'
-                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-              }`}
+              onClick={() => {
+                // Pick a direction not yet used
+                const usedDirs = roadConfigs.map((r) => r.direction);
+                const availableDir = (['south', 'east', 'west', 'north'] as RoadDirection[]).find(
+                  (d) => !usedDirs.includes(d),
+                ) ?? 'south';
+                const newConfigs = [
+                  ...roadConfigs,
+                  { id: String(Date.now()), width: 6, direction: availableDir, customWidth: '' },
+                ];
+                setRoadConfigs(newConfigs);
+                // Auto-detect corner lot: 2+ roads with perpendicular directions
+                if (newConfigs.length >= 2) {
+                  setIsCornerLot(true);
+                  tryUpdate({ cornerLot: true, allRoads: newConfigs });
+                }
+              }}
+              className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
             >
-              {label}
+              + 道路を追加
             </button>
-          ))}
+          )}
         </div>
 
-        <div className="flex gap-1 mb-1">
-          {ROAD_WIDTH_PRESETS.map((w) => (
-            <button
-              key={w}
-              onClick={() => handleRoadWidthPreset(w)}
-              className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-                roadWidth === w && !customRoadWidth
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
-            >
-              {w}m
-            </button>
+        <div className="flex flex-col gap-2">
+          {roadConfigs.map((rc, idx) => (
+            <div key={rc.id} className="rounded border border-gray-700 p-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-gray-500">道路 {idx + 1}</span>
+                {roadConfigs.length > 1 && (
+                  <button
+                    onClick={() => {
+                      const newConfigs = roadConfigs.filter((r) => r.id !== rc.id);
+                      setRoadConfigs(newConfigs);
+                      if (newConfigs.length < 2) {
+                        setIsCornerLot(false);
+                        tryUpdate({ cornerLot: false, allRoads: newConfigs });
+                      } else {
+                        tryUpdate({ allRoads: newConfigs });
+                      }
+                    }}
+                    className="text-[10px] text-red-400 hover:text-red-300 transition-colors"
+                  >
+                    削除
+                  </button>
+                )}
+              </div>
+
+              {/* Direction */}
+              <div className="flex gap-1 mb-1">
+                {ROAD_DIRECTION_OPTIONS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      const newConfigs = roadConfigs.map((r) =>
+                        r.id === rc.id ? { ...r, direction: key } : r,
+                      );
+                      setRoadConfigs(newConfigs);
+                      tryUpdate({ allRoads: newConfigs });
+                    }}
+                    className={`flex-1 rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                      rc.direction === key
+                        ? 'bg-gray-500 text-white'
+                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Width presets + custom */}
+              <div className="flex gap-1 mb-1">
+                {ROAD_WIDTH_PRESETS.map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => {
+                      const newConfigs = roadConfigs.map((r) =>
+                        r.id === rc.id ? { ...r, width: w, customWidth: '' } : r,
+                      );
+                      setRoadConfigs(newConfigs);
+                      tryUpdate({ allRoads: newConfigs });
+                    }}
+                    className={`flex-1 rounded px-1.5 py-1 text-[10px] font-medium transition-colors ${
+                      rc.width === w && !rc.customWidth
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {w}m
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                value={rc.customWidth}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const parsed = parseFloat(v);
+                  const newConfigs = roadConfigs.map((r) =>
+                    r.id === rc.id
+                      ? {
+                          ...r,
+                          customWidth: v,
+                          width: !isNaN(parsed) && parsed > 0 ? parsed : r.width,
+                        }
+                      : r,
+                  );
+                  setRoadConfigs(newConfigs);
+                  if (!isNaN(parsed) && parsed > 0) {
+                    tryUpdate({ allRoads: newConfigs });
+                  }
+                }}
+                placeholder="その他 (m)"
+                min="2"
+                max="50"
+                step="0.5"
+                className="w-full rounded border border-gray-600 bg-gray-800 px-2 py-1 text-[10px] text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
           ))}
         </div>
-        <input
-          type="number"
-          value={customRoadWidth}
-          onChange={(e) => handleCustomRoadWidth(e.target.value)}
-          placeholder="その他 (m)"
-          min="2"
-          max="50"
-          step="0.5"
-          className="w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-xs text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
-        />
       </div>
     </div>
   );

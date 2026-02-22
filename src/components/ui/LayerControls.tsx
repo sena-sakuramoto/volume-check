@@ -17,6 +17,7 @@ const LAYER_DEFS: LayerDef[] = [
   { key: 'north', label: '北側斜線', color: '#8b5cf6' },
   { key: 'absoluteHeight', label: '絶対高さ', color: '#ef4444' },
   { key: 'shadow', label: '日影規制', color: '#6366f1' },
+  { key: 'floorPlates', label: '階高表示', color: '#60a5fa' },
 ];
 
 export function LayerControls({ layers, onToggle }: LayerControlsProps) {
