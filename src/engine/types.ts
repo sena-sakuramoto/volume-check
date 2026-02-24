@@ -184,3 +184,13 @@ export interface Violation {
   violationVertices?: Float32Array;
   violationIndices?: Uint32Array;
 }
+
+/** Serializable project data for save/load */
+export interface ProjectData {
+  version: string;
+  site: SiteBoundary;
+  roads: Road[];
+  zoning: ZoningData;
+  latitude: number;
+  floorHeights: number[];
+}

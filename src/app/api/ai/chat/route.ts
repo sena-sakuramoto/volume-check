@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { chatWithGemini } from '@/lib/gemini';
 
 export async function POST(req: NextRequest) {
+  if (!process.env.GEMINI_API_KEY) {
+    return NextResponse.json({
+      reply: 'AIアシスタントを利用するには環境変数 GEMINI_API_KEY を設定してください。設定なしでもボリュームチェック機能はご利用いただけます。',
+    });
+  }
+
   try {
     const { message, context } = await req.json();
 

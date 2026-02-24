@@ -27,6 +27,7 @@ interface AnalyzeSiteResponse {
   roads?: {
     direction?: string;
     width?: number;
+    edgeVertexIndices?: [number, number];
   }[];
   zoning?: {
     district?: string | null;
@@ -134,6 +135,23 @@ function shortenDistrict(d: ZoningDistrict): string {
   return d.replace('専用地域', '専用').replace('地域', '');
 }
 
+/** Shoelace formula for polygon area */
+function calcPolygonArea(verts: { x: number; y: number }[]): number {
+  let area = 0;
+  const n = verts.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += verts[i].x * verts[j].y;
+    area -= verts[j].x * verts[i].y;
+  }
+  return Math.abs(area) / 2;
+}
+
+function buildPolygonSite(vertices: { x: number; y: number }[], providedArea?: number): SiteBoundary {
+  const area = providedArea ?? calcPolygonArea(vertices);
+  return { vertices, area };
+}
+
 function buildRectSite(width: number, depth: number): SiteBoundary {
   return {
     vertices: [
@@ -143,6 +161,41 @@ function buildRectSite(width: number, depth: number): SiteBoundary {
       { x: 0, y: depth },
     ],
     area: width * depth,
+  };
+}
+
+function buildRoadFromEdge(
+  vertices: { x: number; y: number }[],
+  roadWidth: number,
+  edgeIndices?: [number, number],
+  direction?: string,
+): Road {
+  // Use the specified edge, or default to the first edge (index 0→1)
+  const startIdx = edgeIndices?.[0] ?? 0;
+  const endIdx = edgeIndices?.[1] ?? 1;
+  const edgeStart = vertices[startIdx] ?? vertices[0];
+  const edgeEnd = vertices[endIdx] ?? vertices[1];
+
+  // Calculate bearing from edge direction
+  const dx = edgeEnd.x - edgeStart.x;
+  const dy = edgeEnd.y - edgeStart.y;
+  // The road faces outward (perpendicular to edge), determine bearing
+  let bearing = 180; // default south
+  if (direction) {
+    const dirMap: Record<string, number> = { south: 180, north: 0, east: 90, west: 270 };
+    bearing = dirMap[direction] ?? 180;
+  } else {
+    // Infer from edge normal (outward = away from polygon centroid)
+    const normalAngle = Math.atan2(-dx, dy) * (180 / Math.PI);
+    bearing = ((normalAngle % 360) + 360) % 360;
+  }
+
+  return {
+    edgeStart,
+    edgeEnd,
+    width: roadWidth,
+    centerOffset: roadWidth / 2,
+    bearing,
   };
 }
 
@@ -565,8 +618,12 @@ export function SiteInputPanel({
           return;
         }
 
-        // Apply extracted site data
+        // Extract data
         const siteData = data.site;
+        const roadData = data.roads?.[0];
+        const zoningResult = data.zoning;
+
+        // Apply UI state for manual fields
         if (siteData) {
           if (siteData.frontageWidth && siteData.frontageWidth > 0) {
             setSiteWidth(String(siteData.frontageWidth));
@@ -575,16 +632,8 @@ export function SiteInputPanel({
             setSiteDepth(String(siteData.depth));
           }
         }
-
-        // Apply road data
-        const roadData = data.roads?.[0];
         if (roadData) {
-          const dirMap: Record<string, RoadDirection> = {
-            south: 'south',
-            north: 'north',
-            east: 'east',
-            west: 'west',
-          };
+          const dirMap: Record<string, RoadDirection> = { south: 'south', north: 'north', east: 'east', west: 'west' };
           const dir = roadData.direction ? dirMap[roadData.direction] : undefined;
           if (dir) setRoadDirection(dir);
           if (roadData.width && roadData.width > 0) {
@@ -596,70 +645,79 @@ export function SiteInputPanel({
             }
           }
         }
-
-        // Apply zoning data
-        const zoningResult = data.zoning;
         if (zoningResult) {
           if (zoningResult.district) {
             const matched = matchDistrict(zoningResult.district);
             if (matched) setSelectedDistrict(matched);
           }
-          if (
-            zoningResult.coverageRatio !== null &&
-            zoningResult.coverageRatio !== undefined
-          ) {
+          if (zoningResult.coverageRatio !== null && zoningResult.coverageRatio !== undefined) {
             const normalized = normalizeRatio(zoningResult.coverageRatio);
-            setCoverageOverride(
-              normalized > 0 ? String(Math.round(normalized * 100)) : '',
-            );
+            setCoverageOverride(normalized > 0 ? String(Math.round(normalized * 100)) : '');
           }
-          if (
-            zoningResult.floorAreaRatio !== null &&
-            zoningResult.floorAreaRatio !== undefined
-          ) {
+          if (zoningResult.floorAreaRatio !== null && zoningResult.floorAreaRatio !== undefined) {
             const normalized = normalizeRatio(zoningResult.floorAreaRatio);
-            setFarOverride(
-              normalized > 0 ? String(Math.round(normalized * 100)) : '',
-            );
+            setFarOverride(normalized > 0 ? String(Math.round(normalized * 100)) : '');
           }
           if (zoningResult.fireDistrict) {
             setFireDistrict(matchFireDistrict(zoningResult.fireDistrict));
           }
         }
 
-        // Trigger scene update with extracted data
-        const w = siteData?.frontageWidth ?? parseFloat(siteWidth);
-        const d = siteData?.depth ?? parseFloat(siteDepth);
-        const dist =
-          (zoningResult?.district ? matchDistrict(zoningResult.district) : null) ??
-          selectedDistrict;
-        const rDir = roadData?.direction
-          ? ({ south: 'south', north: 'north', east: 'east', west: 'west' } as Record<string, RoadDirection>)[roadData.direction] ?? roadDirection
-          : roadDirection;
-        const rw = roadData?.width ?? roadWidth;
-        const cov =
-          zoningResult?.coverageRatio != null
-            ? normalizeRatio(zoningResult.coverageRatio)
-            : undefined;
-        const far =
-          zoningResult?.floorAreaRatio != null
-            ? normalizeRatio(zoningResult.floorAreaRatio)
-            : undefined;
-        const fire = zoningResult?.fireDistrict
-          ? matchFireDistrict(zoningResult.fireDistrict)
-          : undefined;
+        // Build site from polygon vertices (not rectangle approximation)
+        const hasPolygonVertices = siteData?.vertices && siteData.vertices.length >= 3;
 
-        if (dist && !isNaN(w) && w > 0 && !isNaN(d) && d > 0) {
-          updateScene(
-            w,
-            d,
-            dist,
-            rw,
-            rDir,
-            cov && cov > 0 ? cov : undefined,
-            far && far > 0 ? far : undefined,
-            fire,
-          );
+        if (hasPolygonVertices) {
+          // Use actual polygon vertices from survey map
+          const verts = siteData!.vertices!;
+          const polygonSite = buildPolygonSite(verts, siteData!.area ?? undefined);
+          onSiteChange(polygonSite);
+
+          // Build roads from all detected edges (supports corner lots)
+          const allRoads = data.roads;
+          if (allRoads && allRoads.length > 0) {
+            const builtRoads = allRoads.map((rd) =>
+              buildRoadFromEdge(
+                verts,
+                rd.width ?? roadWidth,
+                rd.edgeVertexIndices,
+                rd.direction,
+              ),
+            );
+            onRoadsChange(builtRoads);
+          } else {
+            // Fallback: single road from first edge
+            const rw = roadData?.width ?? roadWidth;
+            onRoadsChange([buildRoadFromEdge(verts, rw, undefined, roadData?.direction)]);
+          }
+
+          // Build zoning
+          const dist = (zoningResult?.district ? matchDistrict(zoningResult.district) : null) ?? selectedDistrict;
+          if (dist) {
+            const cov = zoningResult?.coverageRatio != null ? normalizeRatio(zoningResult.coverageRatio) : undefined;
+            const far = zoningResult?.floorAreaRatio != null ? normalizeRatio(zoningResult.floorAreaRatio) : undefined;
+            const fire = zoningResult?.fireDistrict ? matchFireDistrict(zoningResult.fireDistrict) : undefined;
+            onZoningChange(buildZoningData(dist, {
+              coverageRatio: cov && cov > 0 ? cov : undefined,
+              floorAreaRatio: far && far > 0 ? far : undefined,
+              fireDistrict: fire,
+            }));
+          }
+        } else {
+          // Fallback: rectangle from frontageWidth x depth
+          const w = siteData?.frontageWidth ?? parseFloat(siteWidth);
+          const d = siteData?.depth ?? parseFloat(siteDepth);
+          const dist = (zoningResult?.district ? matchDistrict(zoningResult.district) : null) ?? selectedDistrict;
+          const rDir = roadData?.direction
+            ? ({ south: 'south', north: 'north', east: 'east', west: 'west' } as Record<string, RoadDirection>)[roadData.direction] ?? roadDirection
+            : roadDirection;
+          const rw = roadData?.width ?? roadWidth;
+          const cov = zoningResult?.coverageRatio != null ? normalizeRatio(zoningResult.coverageRatio) : undefined;
+          const far = zoningResult?.floorAreaRatio != null ? normalizeRatio(zoningResult.floorAreaRatio) : undefined;
+          const fire = zoningResult?.fireDistrict ? matchFireDistrict(zoningResult.fireDistrict) : undefined;
+
+          if (dist && !isNaN(w) && w > 0 && !isNaN(d) && d > 0) {
+            updateScene(w, d, dist, rw, rDir, cov && cov > 0 ? cov : undefined, far && far > 0 ? far : undefined, fire);
+          }
         }
 
         setUploadStatus({
@@ -682,6 +740,9 @@ export function SiteInputPanel({
       roadWidth,
       roadDirection,
       updateScene,
+      onSiteChange,
+      onRoadsChange,
+      onZoningChange,
     ],
   );
 

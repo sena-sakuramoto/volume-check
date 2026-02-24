@@ -77,7 +77,6 @@ export function RegulationPanel({
       floorHeights: floorHeights ?? [],
       savedAt: '',
     });
-    // Brief visual feedback via alert (simple but effective)
     alert('保存しました');
   }, [site, roads, zoning, latitude, floorHeights]);
 

@@ -9,6 +9,7 @@ import { RegulationPanel } from '@/components/ui/RegulationPanel';
 import { LayerControls } from '@/components/ui/LayerControls';
 import { FloorEditor } from '@/components/ui/FloorEditor';
 import { AiChat } from '@/components/chat/AiChat';
+import { PrintReport } from '@/components/ui/PrintReport';
 import { DEMO_SITE, DEMO_ROADS, DEMO_ZONING } from '@/lib/demo-data';
 import { loadProject } from '@/lib/project-storage';
 
@@ -131,7 +132,7 @@ export default function ProjectPage() {
   const isSheetOpen = activeTab !== '3d';
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
+    <div className="flex flex-col h-screen bg-gray-950 text-gray-100 no-print">
       {/* Header */}
       <header className="flex items-center h-11 px-4 border-b border-gray-800 shrink-0">
         <h1 className="text-base font-bold tracking-tight text-white">
@@ -188,13 +189,13 @@ export default function ProjectPage() {
         {/* Right Sidebar */}
         <aside className="w-72 shrink-0 border-l border-gray-800 overflow-y-auto">
           <RegulationPanel
-              zoning={zoning}
-              result={volumeResult}
-              site={site}
-              roads={roads}
-              floorHeights={effectiveFloorHeights}
-              latitude={latitude}
-            />
+            zoning={zoning}
+            result={volumeResult}
+            site={site}
+            roads={roads}
+            floorHeights={effectiveFloorHeights}
+            latitude={latitude}
+          />
         </aside>
       </div>
 
@@ -270,13 +271,13 @@ export default function ProjectPage() {
 
             {activeTab === 'result' && (
               <RegulationPanel
-              zoning={zoning}
-              result={volumeResult}
-              site={site}
-              roads={roads}
-              floorHeights={effectiveFloorHeights}
-              latitude={latitude}
-            />
+                zoning={zoning}
+                result={volumeResult}
+                site={site}
+                roads={roads}
+                floorHeights={effectiveFloorHeights}
+                latitude={latitude}
+              />
             )}
 
             {activeTab === 'ai' && (
@@ -311,6 +312,9 @@ export default function ProjectPage() {
           })}
         </div>
       </div>
+
+      {/* Print-only report */}
+      <PrintReport zoning={zoning} result={volumeResult} siteArea={site?.area ?? null} />
     </div>
   );
 }

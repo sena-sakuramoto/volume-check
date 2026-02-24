@@ -1,6 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
 
-const genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+function getGenAI(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  return new GoogleGenAI({ apiKey });
+}
 
 interface ChatContext {
   zoning?: {
@@ -40,6 +44,11 @@ export async function chatWithGemini(message: string, context: ChatContext): Pro
         ? `\n\n【計算結果】\n最大延床面積: ${context.result.maxFloorArea.toFixed(1)}㎡\n最大建築面積: ${context.result.maxCoverageArea.toFixed(1)}㎡\n最大高さ: ${context.result.maxHeight.toFixed(1)}m\n最大階数: ${context.result.maxFloors}F`
         : '')
     : '';
+
+  const genai = getGenAI();
+  if (!genai) {
+    return 'AIアシスタントを利用するには環境変数 GEMINI_API_KEY を設定してください。設定なしでもボリュームチェック機能はご利用いただけます。';
+  }
 
   try {
     const response = await genai.models.generateContent({

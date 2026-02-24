@@ -9,6 +9,7 @@ interface LayerDef {
   key: string;
   label: string;
   color: string;
+  comingSoon?: boolean;
 }
 
 const LAYER_DEFS: LayerDef[] = [
@@ -27,10 +28,12 @@ export function LayerControls({ layers, onToggle }: LayerControlsProps) {
         レイヤー
       </h3>
       <div className="flex flex-col gap-1">
-        {LAYER_DEFS.map(({ key, label, color }) => (
+        {LAYER_DEFS.map(({ key, label, color, comingSoon }) => (
           <label
             key={key}
-            className="flex items-center gap-2 rounded px-2 py-1.5 cursor-pointer hover:bg-gray-800 transition-colors"
+            className={`flex items-center gap-2 rounded px-2 py-1.5 transition-colors ${
+              comingSoon ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-800'
+            }`}
           >
             <span
               className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
@@ -39,10 +42,16 @@ export function LayerControls({ layers, onToggle }: LayerControlsProps) {
             <input
               type="checkbox"
               checked={layers[key] ?? false}
-              onChange={() => onToggle(key)}
+              onChange={() => !comingSoon && onToggle(key)}
+              disabled={comingSoon}
               className="h-3.5 w-3.5 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 accent-blue-500"
             />
             <span className="text-sm text-gray-300">{label}</span>
+            {comingSoon && (
+              <span className="text-[10px] rounded bg-gray-700 px-1.5 py-0.5 text-gray-400">
+                近日公開
+              </span>
+            )}
           </label>
         ))}
       </div>

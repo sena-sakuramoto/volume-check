@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# VolumeCheck - 建築ボリュームチェック
 
-## Getting Started
+住所入力だけで法規制を自動取得し、最大建築可能ボリュームを3Dで表示するWebアプリケーションです。
 
-First, run the development server:
+## 機能一覧
+
+- 住所入力による用途地域・法規制の自動取得
+- 道路斜線・隣地斜線・北側斜線・絶対高さ制限の自動計算
+- 最大建築可能ボリュームの3D表示
+- 建ぺい率・容積率・最大延べ面積・最大階数の算出
+- 階高エディタによるフロアごとの高さ調整
+- レイヤー表示切替（道路斜線/隣地斜線/北側斜線/絶対高さ）
+- プロジェクトの保存・読み込み（JSON形式）
+- PDF出力（ブラウザ印刷機能）
+- AIアシスタント（建築基準法の質問対応、Gemini API）
+- デスクトップ・モバイル対応レスポンシブUI
+
+## セットアップ
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+# 依存パッケージのインストール
+pnpm install
+
+# 開発サーバーの起動
 pnpm dev
-# or
-bun dev
+
+# ビルド
+pnpm build
+
+# テスト
+pnpm test
+
+# Lint
+pnpm lint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 環境変数
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`.env.example` を `.env.local` にコピーして設定してください。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| 変数名 | 必須 | 説明 |
+|--------|------|------|
+| `GEMINI_API_KEY` | 任意 | Google Gemini APIキー（AIアシスタント機能に必要。未設定でもボリュームチェック機能は利用可能） |
 
-## Learn More
+## 技術スタック
 
-To learn more about Next.js, take a look at the following resources:
+- **フレームワーク:** Next.js 16 (App Router)
+- **UI:** React 19, Tailwind CSS 4
+- **3D描画:** Three.js, @react-three/fiber, @react-three/drei
+- **CSG演算:** three-bvh-csg, three-mesh-bvh
+- **AI:** Google Gemini API (@google/genai)
+- **テスト:** Jest, ts-jest
+- **言語:** TypeScript 5
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## プロジェクト構成
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+├── app/          # Next.js App Router ページ・APIルート
+├── components/   # UIコンポーネント・3Dシーン・チャット
+├── engine/       # 建築計算エンジン（斜線制限・容積率等）
+└── lib/          # ユーティリティ（Gemini連携・デモデータ等）
+```
 
-## Deploy on Vercel
+## 免責事項
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+本アプリケーションは建築ボリュームの概算ツールであり、法的な確認書類を生成するものではありません。実際の建築計画には、所管の行政機関への確認および建築士による法適合確認が必要です。計算結果は入力データの精度に依存し、特定建築物や地区計画等の個別規制は考慮されていない場合があります。
