@@ -152,6 +152,8 @@ export interface VolumeResult {
   shadowProjection: ShadowProjectionResult | null;
   /** Height field data for time-specific shadow computation */
   heightFieldData: HeightFieldData | null;
+  /** Reverse shadow analysis (逆日影) - height contours from shadow regulation */
+  reverseShadow: ReverseShadowResult | null;
 }
 
 /** Design proposal for compliance checking */
@@ -229,6 +231,26 @@ export interface ShadowGridData {
 export interface ShadowProjectionResult {
   /** Equal-time shadow grid (等時間日影図) */
   shadowGrid: ShadowGridData;
+  /** 5m measurement line offset from site boundary */
+  line5m: Point2D[];
+  /** 10m measurement line offset from site boundary */
+  line10m: Point2D[];
+}
+
+/** A single contour line (等高線) at a specific height */
+export interface ContourLine {
+  /** Height value of this contour in meters */
+  height: number;
+  /** Segments forming the contour: pairs of [start, end] */
+  segments: { start: Point2D; end: Point2D }[];
+}
+
+/** Reverse shadow (逆日影) analysis result */
+export interface ReverseShadowResult {
+  /** Shadow-constrained height field (日影高さ制限面) */
+  shadowHeightField: HeightFieldData;
+  /** Contour lines of the shadow height constraint (逆日影ライン) */
+  contourLines: ContourLine[];
   /** 5m measurement line offset from site boundary */
   line5m: Point2D[];
   /** 10m measurement line offset from site boundary */

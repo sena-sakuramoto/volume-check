@@ -21,7 +21,8 @@ import {
 import { validateVolumeInput } from './validation';
 import { calculateShadowConstrainedHeight } from './shadow';
 import { generateShadowProjection } from './shadow-projection';
-import type { HeightFieldData, ShadowProjectionResult } from './types';
+import { generateReverseShadow } from './reverse-shadow';
+import type { HeightFieldData, ShadowProjectionResult, ReverseShadowResult } from './types';
 
 /** Grid resolution in meters for sampling height field */
 const GRID_RESOLUTION = 0.5;
@@ -837,6 +838,18 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     );
   }
 
+  // Reverse shadow analysis (逆日影ライン)
+  let reverseShadow: ReverseShadowResult | null = null;
+  if (zoning.shadowRegulation !== null) {
+    reverseShadow = generateReverseShadow(
+      site.vertices,
+      buildablePolygon,
+      zoning.shadowRegulation,
+      input.latitude,
+      northRotation,
+    );
+  }
+
   return {
     maxFloorArea,
     maxCoverageArea,
@@ -852,6 +865,7 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
       shadow: shadowEnvelope,
     },
     shadowProjection,
+    reverseShadow,
     heightFieldData: zoning.shadowRegulation !== null ? {
       cols: combinedField.cols,
       rows: combinedField.rows,

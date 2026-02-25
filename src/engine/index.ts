@@ -19,4 +19,5 @@ export {
 export { validateVolumeInput, isSimplePolygon } from './validation';
 export { solarPosition, shadowTip, calculateShadowConstrainedHeight, solarAzimuthToCompass } from './shadow';
 export { generateShadowProjection, getShadowMaskAtTime } from './shadow-projection';
+export { generateReverseShadow } from './reverse-shadow';
 export type * from './types';

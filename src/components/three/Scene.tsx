@@ -14,6 +14,7 @@ import { VolumeEnvelope } from './VolumeEnvelope';
 import { SetbackLines } from './SetbackLines';
 import { FloorPlates } from './FloorPlates';
 import { ShadowOverlay } from './ShadowOverlay';
+import { ReverseShadowOverlay } from './ReverseShadowOverlay';
 import type { VolumeResult, SiteBoundary, Road, ZoningData } from '@/engine/types';
 
 interface SceneProps {
@@ -32,6 +33,8 @@ interface SceneProps {
     shadowHeatmap: boolean;
     shadowTimeShadow: boolean;
     shadowMeasurementLines: boolean;
+    reverseShadowContours: boolean;
+    reverseShadowHeightmap: boolean;
   };
   /** Shadow time for time-specific display */
   shadowTime: { hour: number; minute: number } | null;
@@ -131,7 +134,17 @@ export function Scene({ site, roads, zoning, volumeResult, floorHeights, layers,
           />
         )}
 
-        {/* Shadow projection overlay (日影投影) */}
+        {/* Reverse shadow overlay (逆日影ライン) */}
+        {volumeResult?.reverseShadow && (
+          <ReverseShadowOverlay
+            reverseShadow={volumeResult.reverseShadow}
+            showContours={layers.reverseShadowContours}
+            showHeightmap={layers.reverseShadowHeightmap}
+            showMeasurementLines={layers.shadowMeasurementLines}
+          />
+        )}
+
+        {/* Shadow projection overlay (順日影・等時間日影図) */}
         {site && volumeResult?.shadowProjection && (
           <ShadowOverlay
             shadowProjection={volumeResult.shadowProjection}
@@ -139,7 +152,7 @@ export function Scene({ site, roads, zoning, volumeResult, floorHeights, layers,
             shadowTime={shadowTime ?? null}
             shadowMask={shadowMask ?? null}
             showHeatmap={layers.shadowHeatmap}
-            showMeasurementLines={layers.shadowMeasurementLines}
+            showMeasurementLines={!layers.reverseShadowContours && layers.shadowMeasurementLines}
             showTimeShadow={layers.shadowTimeShadow}
           />
         )}

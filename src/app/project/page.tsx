@@ -31,9 +31,11 @@ const DEFAULT_LAYERS: Record<string, boolean> = {
   north: true,
   absoluteHeight: true,
   shadow: true,
-  shadowHeatmap: true,
-  shadowTimeShadow: false,
+  reverseShadowContours: true,
+  reverseShadowHeightmap: false,
   shadowMeasurementLines: true,
+  shadowHeatmap: false,
+  shadowTimeShadow: false,
   floorPlates: true,
 };
 
@@ -157,7 +159,9 @@ export default function ProjectPage() {
     absoluteHeight: layers.absoluteHeight ?? false,
     shadow: layers.shadow ?? false,
     floorPlates: layers.floorPlates ?? true,
-    shadowHeatmap: layers.shadowHeatmap ?? true,
+    reverseShadowContours: layers.reverseShadowContours ?? true,
+    reverseShadowHeightmap: layers.reverseShadowHeightmap ?? false,
+    shadowHeatmap: layers.shadowHeatmap ?? false,
     shadowTimeShadow: layers.shadowTimeShadow ?? false,
     shadowMeasurementLines: layers.shadowMeasurementLines ?? true,
   };
