@@ -11,6 +11,7 @@ import type {
 } from '@/engine/types';
 import { getZoningDefaults } from '@/engine';
 import { PolygonSiteInput } from './PolygonSiteInput';
+import { parseSiteFile } from '@/lib/site-file-parser';
 
 /* ------------------------------------------------------------------ */
 /*  Analyze-site API response type                                     */
@@ -569,17 +570,22 @@ export function SiteInputPanel({
 
   const handleFileUpload = useCallback(
     async (file: File) => {
-      const validTypes = [
+      // Check if it's a coordinate data file (CSV / GeoJSON)
+      const ext = file.name.toLowerCase().split('.').pop() ?? '';
+      const isDataFile = ['csv', 'geojson', 'json'].includes(ext);
+
+      const validImageTypes = [
         'image/jpeg',
         'image/png',
         'image/webp',
         'image/heic',
         'application/pdf',
       ];
-      if (!validTypes.includes(file.type)) {
+
+      if (!isDataFile && !validImageTypes.includes(file.type)) {
         setUploadStatus({
           state: 'error',
-          message: '対応形式: JPEG, PNG, WebP, HEIC, PDF',
+          message: '対応形式: JPEG, PNG, WebP, HEIC, PDF, CSV, GeoJSON',
         });
         return;
       }
@@ -591,6 +597,36 @@ export function SiteInputPanel({
         return;
       }
 
+      // --- CSV / GeoJSON: parse client-side (no API call) ---
+      if (isDataFile) {
+        try {
+          const text = await file.text();
+          const result = parseSiteFile(file.name, text);
+
+          onSiteChange(result.site);
+
+          if (result.roads.length > 0) {
+            onRoadsChange(result.roads);
+          }
+
+          if (result.latitude) {
+            onLatitudeChange(result.latitude);
+          }
+
+          setUploadStatus({
+            state: 'success',
+            notes: result.notes,
+          });
+        } catch (e) {
+          setUploadStatus({
+            state: 'error',
+            message: e instanceof Error ? e.message : 'ファイルの読み込みに失敗しました',
+          });
+        }
+        return;
+      }
+
+      // --- Image / PDF: send to Gemini API ---
       setUploadStatus({ state: 'uploading' });
 
       try {
@@ -743,6 +779,7 @@ export function SiteInputPanel({
       onSiteChange,
       onRoadsChange,
       onZoningChange,
+      onLatitudeChange,
     ],
   );
 
@@ -959,7 +996,7 @@ export function SiteInputPanel({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+            accept="image/jpeg,image/png,image/webp,image/heic,application/pdf,.csv,.geojson,.json"
             onChange={handleFileInput}
             className="hidden"
           />
@@ -984,10 +1021,10 @@ export function SiteInputPanel({
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
               <span className="text-[10px] text-gray-400">
-                測量図・概要書をドロップ
+                測量図・座標データをドロップ
               </span>
               <span className="text-[10px] text-gray-500">
-                JPEG, PNG, PDF (10MB以下)
+                JPEG, PNG, PDF, CSV, GeoJSON
               </span>
             </>
           )}
