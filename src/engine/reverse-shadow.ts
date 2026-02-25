@@ -5,8 +5,8 @@ import { calculateShadowConstrainedHeight } from './shadow';
 // Reverse shadow (逆日影) analysis
 // ---------------------------------------------------------------------------
 
-/** Grid resolution for the reverse shadow height field */
-const REVERSE_SHADOW_RESOLUTION = 0.5;
+/** Grid resolution for the reverse shadow height field (meters) */
+const REVERSE_SHADOW_RESOLUTION = 0.3;
 
 /**
  * Generate the reverse shadow (逆日影) analysis.
@@ -115,11 +115,18 @@ function generateContourHeights(
 
   if (minH >= maxH || !isFinite(minH)) return [];
 
-  const interval = 3; // 3m intervals (standard floor height)
+  // Use adaptive interval: 1m for small ranges, 1.5m for medium, 2m for large
+  const range = maxH - minH;
+  const interval = range < 15 ? 1 : range < 30 ? 1.5 : 2;
   const result: number[] = [];
   const startH = Math.ceil(minH / interval) * interval;
   for (let h = startH; h <= maxH; h += interval) {
     if (h > 0) result.push(h);
+  }
+  // Cap at 20 contour lines to avoid visual clutter
+  if (result.length > 20) {
+    const step = Math.ceil(result.length / 20);
+    return result.filter((_, i) => i % step === 0);
   }
   return result;
 }

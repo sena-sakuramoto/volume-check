@@ -32,7 +32,7 @@ const DEFAULT_LAYERS: Record<string, boolean> = {
   absoluteHeight: true,
   shadow: true,
   reverseShadowContours: true,
-  reverseShadowHeightmap: false,
+  reverseShadowHeightmap: true,
   shadowMeasurementLines: true,
   shadowHeatmap: false,
   shadowTimeShadow: false,

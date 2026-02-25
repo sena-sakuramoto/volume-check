@@ -11,11 +11,8 @@ import type { Point2D, ReverseShadowResult, ContourLine, HeightFieldData } from 
 
 interface ReverseShadowOverlayProps {
   reverseShadow: ReverseShadowResult;
-  /** Show contour lines (逆日影ライン) */
   showContours: boolean;
-  /** Show shadow height heatmap */
   showHeightmap: boolean;
-  /** Show 5m/10m measurement lines */
   showMeasurementLines: boolean;
 }
 
@@ -23,29 +20,41 @@ interface ReverseShadowOverlayProps {
 // Color helpers
 // ---------------------------------------------------------------------------
 
-/** Height-based color: low=red (constrained), high=green (less constrained) */
 function getHeightColor(h: number, minH: number, maxH: number): { r: number; g: number; b: number; a: number } {
-  if (maxH <= minH) return { r: 100, g: 200, b: 100, a: 140 };
+  if (maxH <= minH) return { r: 100, g: 200, b: 100, a: 200 };
   const t = Math.max(0, Math.min(1, (h - minH) / (maxH - minH)));
-  // Red (constrained) → Yellow → Green (less constrained)
-  const r = Math.round(220 - t * 180);
-  const g = Math.round(60 + t * 160);
-  const b = Math.round(40);
-  const a = Math.round(120 + (1 - t) * 60);
-  return { r, g, b, a };
+  // Blue-purple (constrained) → Cyan → Yellow → Green (less constrained)
+  let r: number, g: number, b: number;
+  if (t < 0.33) {
+    const s = t / 0.33;
+    r = Math.round(180 * (1 - s) + 20 * s);
+    g = Math.round(40 * (1 - s) + 200 * s);
+    b = Math.round(220 * (1 - s) + 220 * s);
+  } else if (t < 0.66) {
+    const s = (t - 0.33) / 0.33;
+    r = Math.round(20 * (1 - s) + 240 * s);
+    g = Math.round(200 * (1 - s) + 220 * s);
+    b = Math.round(220 * (1 - s) + 40 * s);
+  } else {
+    const s = (t - 0.66) / 0.34;
+    r = Math.round(240 * (1 - s) + 30 * s);
+    g = Math.round(220 * (1 - s) + 200 * s);
+    b = Math.round(40 * (1 - s) + 30 * s);
+  }
+  return { r, g, b, a: 200 };
 }
 
-// Contour line colors: alternating for readability
+// Highly visible contour colors
 const CONTOUR_COLORS = [
-  '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6',
-  '#ec4899', '#14b8a6', '#f59e0b', '#6366f1',
+  '#ff3333', '#ff8800', '#ffdd00', '#00cc44', '#0088ff', '#aa44ff',
+  '#ff44aa', '#00ccaa', '#ff6600', '#4466ff',
 ];
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/** Reverse shadow height heatmap on building footprint (逆日影高さ制限面) */
+/** Reverse shadow height heatmap - rendered as a large, visible overlay */
 function ShadowHeightmap({ field }: { field: HeightFieldData }) {
   const { texture, centerX, centerZ, width, height } = useMemo(() => {
     const { cols, rows, originX, originY, resolution, heights, insideMask } = field;
@@ -72,8 +81,9 @@ function ShadowHeightmap({ field }: { field: HeightFieldData }) {
 
     const tex = new THREE.DataTexture(data, cols, rows, THREE.RGBAFormat);
     tex.needsUpdate = true;
-    tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestFilter;
+    // Use linear filter for smooth gradients instead of pixelated blocks
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
 
     const w = cols * resolution;
     const h2 = rows * resolution;
@@ -87,7 +97,7 @@ function ShadowHeightmap({ field }: { field: HeightFieldData }) {
   }, [field]);
 
   return (
-    <mesh rotation-x={-Math.PI / 2} position={[centerX, 0.035, centerZ]}>
+    <mesh rotation-x={-Math.PI / 2} position={[centerX, 0.06, centerZ]}>
       <planeGeometry args={[width, height]} />
       <meshBasicMaterial
         map={texture}
@@ -100,7 +110,10 @@ function ShadowHeightmap({ field }: { field: HeightFieldData }) {
   );
 }
 
-/** Single contour line rendered as line segments with label */
+/**
+ * Contour line rendered as a thick tube mesh (not lineSegments).
+ * WebGL linewidth is always 1px, so we use TubeGeometry for visibility.
+ */
 function ContourLineDisplay({
   contour,
   colorIndex,
@@ -109,48 +122,57 @@ function ContourLineDisplay({
   colorIndex: number;
 }) {
   const color = CONTOUR_COLORS[colorIndex % CONTOUR_COLORS.length];
+  const TUBE_RADIUS = 0.08;
+  const Y_OFFSET = 0.12;
 
-  const geometry = useMemo(() => {
-    const positions: number[] = [];
-    for (const seg of contour.segments) {
-      // Engine (x, y) → Three.js (x, Y=0.05, z=y)
-      positions.push(seg.start.x, 0.05, seg.start.y);
-      positions.push(seg.end.x, 0.05, seg.end.y);
+  // Chain segments into connected polylines, then render each as a tube
+  const { meshes, labelPos } = useMemo(() => {
+    if (contour.segments.length === 0) {
+      return { meshes: [] as THREE.BufferGeometry[], labelPos: [0, 0, 0] as [number, number, number] };
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    return geo;
+
+    // Build adjacency: chain segments that share endpoints
+    const chains = chainSegments(contour.segments);
+
+    const geos: THREE.BufferGeometry[] = [];
+
+    for (const chain of chains) {
+      if (chain.length < 2) continue;
+      const points3d = chain.map((p) => new THREE.Vector3(p.x, Y_OFFSET, p.y));
+      const curve = new THREE.CatmullRomCurve3(points3d, false, 'centripetal', 0.3);
+      const tubeGeo = new THREE.TubeGeometry(curve, Math.max(4, chain.length * 2), TUBE_RADIUS, 4, false);
+      geos.push(tubeGeo);
+    }
+
+    // Label at midpoint of the longest chain
+    const longest = chains.reduce((a, b) => (a.length > b.length ? a : b), chains[0] ?? []);
+    const mid = longest[Math.floor(longest.length / 2)] ?? contour.segments[0].start;
+    const lp: [number, number, number] = [mid.x, Y_OFFSET + 0.3, mid.y];
+
+    return { meshes: geos, labelPos: lp };
   }, [contour.segments]);
 
-  // Place label at the first segment midpoint
-  const labelPos: [number, number, number] = useMemo(() => {
-    if (contour.segments.length === 0) return [0, 0, 0];
-    const seg = contour.segments[0];
-    return [
-      (seg.start.x + seg.end.x) / 2,
-      0.08,
-      (seg.start.y + seg.end.y) / 2,
-    ];
-  }, [contour.segments]);
-
-  if (contour.segments.length === 0) return null;
+  if (meshes.length === 0) return null;
 
   return (
     <group>
-      <lineSegments geometry={geometry}>
-        <lineBasicMaterial color={color} linewidth={2} />
-      </lineSegments>
+      {meshes.map((geo, i) => (
+        <mesh key={i} geometry={geo}>
+          <meshBasicMaterial color={color} />
+        </mesh>
+      ))}
       <Html position={labelPos} center style={{ pointerEvents: 'none' }}>
         <div
           style={{
-            background: 'rgba(0,0,0,0.75)',
+            background: 'rgba(0,0,0,0.85)',
             color,
-            padding: '1px 4px',
-            borderRadius: '2px',
-            fontSize: '9px',
+            padding: '2px 6px',
+            borderRadius: '3px',
+            fontSize: '11px',
             fontWeight: 700,
             whiteSpace: 'nowrap',
-            border: `1px solid ${color}`,
+            border: `2px solid ${color}`,
+            textShadow: '0 0 4px rgba(0,0,0,0.5)',
           }}
         >
           {contour.height}m
@@ -160,7 +182,75 @@ function ContourLineDisplay({
   );
 }
 
-/** Dashed measurement line (5m/10m offset) */
+/** Chain disconnected segments into continuous polylines */
+function chainSegments(segments: { start: Point2D; end: Point2D }[]): Point2D[][] {
+  if (segments.length === 0) return [];
+
+  const EPS = 0.01; // tolerance for matching endpoints
+  const used = new Set<number>();
+  const chains: Point2D[][] = [];
+
+  const dist2 = (a: Point2D, b: Point2D) =>
+    (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+  const close = (a: Point2D, b: Point2D) => dist2(a, b) < EPS * EPS;
+
+  for (let seed = 0; seed < segments.length; seed++) {
+    if (used.has(seed)) continue;
+    used.add(seed);
+
+    const chain: Point2D[] = [segments[seed].start, segments[seed].end];
+
+    // Extend forward
+    let extended = true;
+    while (extended) {
+      extended = false;
+      const tail = chain[chain.length - 1];
+      for (let i = 0; i < segments.length; i++) {
+        if (used.has(i)) continue;
+        if (close(tail, segments[i].start)) {
+          chain.push(segments[i].end);
+          used.add(i);
+          extended = true;
+          break;
+        }
+        if (close(tail, segments[i].end)) {
+          chain.push(segments[i].start);
+          used.add(i);
+          extended = true;
+          break;
+        }
+      }
+    }
+
+    // Extend backward
+    extended = true;
+    while (extended) {
+      extended = false;
+      const head = chain[0];
+      for (let i = 0; i < segments.length; i++) {
+        if (used.has(i)) continue;
+        if (close(head, segments[i].end)) {
+          chain.unshift(segments[i].start);
+          used.add(i);
+          extended = true;
+          break;
+        }
+        if (close(head, segments[i].start)) {
+          chain.unshift(segments[i].end);
+          used.add(i);
+          extended = true;
+          break;
+        }
+      }
+    }
+
+    chains.push(chain);
+  }
+
+  return chains;
+}
+
+/** Dashed measurement line (5m/10m offset) rendered as tube for visibility */
 function MeasurementLine({
   points,
   color,
@@ -173,7 +263,7 @@ function MeasurementLine({
   const lineRef = useRef<THREE.LineLoop>(null);
 
   const geometry = useMemo(() => {
-    const vec3Points = points.map((p) => new THREE.Vector3(p.x, 0.04, p.y));
+    const vec3Points = points.map((p) => new THREE.Vector3(p.x, 0.08, p.y));
     return new THREE.BufferGeometry().setFromPoints(vec3Points);
   }, [points]);
 
@@ -184,7 +274,7 @@ function MeasurementLine({
   }, [geometry]);
 
   const labelPos: [number, number, number] = useMemo(
-    () => (points.length > 0 ? [points[0].x, 0.06, points[0].y] : [0, 0, 0]),
+    () => (points.length > 0 ? [points[0].x, 0.15, points[0].y] : [0, 0, 0]),
     [points],
   );
 
@@ -198,9 +288,9 @@ function MeasurementLine({
           style={{
             background: color,
             color: '#fff',
-            padding: '1px 5px',
+            padding: '2px 6px',
             borderRadius: '3px',
-            fontSize: '10px',
+            fontSize: '11px',
             fontWeight: 600,
             whiteSpace: 'nowrap',
           }}
@@ -213,7 +303,7 @@ function MeasurementLine({
 }
 
 /** Legend for reverse shadow contour lines */
-function ReverseShadowLegend({ contourLines }: { contourLines: ContourLine[] }) {
+function ReverseShadowLegend({ contourLines, minH, maxH }: { contourLines: ContourLine[]; minH: number; maxH: number }) {
   return (
     <Html
       position={[0, 0, 0]}
@@ -231,33 +321,39 @@ function ReverseShadowLegend({ contourLines }: { contourLines: ContourLine[] }) 
     >
       <div
         style={{
-          background: 'rgba(15, 23, 42, 0.85)',
-          borderRadius: '6px',
-          padding: '8px 10px',
+          background: 'rgba(15, 23, 42, 0.92)',
+          borderRadius: '8px',
+          padding: '10px 12px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '3px',
-          fontSize: '11px',
+          gap: '4px',
+          fontSize: '12px',
           color: '#e2e8f0',
           fontFamily: 'system-ui, sans-serif',
           lineHeight: 1.3,
           pointerEvents: 'none',
           userSelect: 'none',
+          border: '1px solid rgba(255,255,255,0.15)',
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: '2px' }}>逆日影ライン</div>
+        <div style={{ fontWeight: 700, marginBottom: '2px', fontSize: '13px' }}>逆日影ライン</div>
+        <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px' }}>
+          日影による最大高さ: {minH.toFixed(1)}m 〜 {maxH.toFixed(1)}m
+        </div>
         {contourLines.map((cl, i) => (
           <div key={cl.height} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span
               style={{
                 display: 'inline-block',
-                width: '14px',
-                height: '3px',
+                width: '16px',
+                height: '4px',
                 background: CONTOUR_COLORS[i % CONTOUR_COLORS.length],
+                borderRadius: '2px',
                 flexShrink: 0,
               }}
             />
-            <span>{cl.height}m</span>
+            <span style={{ fontWeight: 600 }}>{cl.height}m</span>
+            <span style={{ fontSize: '10px', color: '#94a3b8' }}>({cl.segments.length}線分)</span>
           </div>
         ))}
       </div>
@@ -269,24 +365,24 @@ function ReverseShadowLegend({ contourLines }: { contourLines: ContourLine[] }) 
 // Main component
 // ---------------------------------------------------------------------------
 
-/**
- * ReverseShadowOverlay renders 逆日影 (reverse shadow) analysis:
- *
- * 1. **Contour lines (逆日影ライン)**: Height contours showing where
- *    shadow regulation constrains building height. These are the lines
- *    practitioners need to understand the maximum buildable envelope.
- *
- * 2. **Height heatmap**: Color-coded visualization of the shadow height
- *    constraint surface (red=low/constrained, green=high/less constrained).
- *
- * 3. **Measurement lines**: 5m/10m offset lines from site boundary.
- */
 export function ReverseShadowOverlay({
   reverseShadow,
   showContours,
   showHeightmap,
   showMeasurementLines,
 }: ReverseShadowOverlayProps) {
+  // Compute min/max height for legend
+  const { minH, maxH } = useMemo(() => {
+    const field = reverseShadow.shadowHeightField;
+    let min = Infinity, max = -Infinity;
+    for (let i = 0; i < field.heights.length; i++) {
+      if (field.insideMask[i] === 0) continue;
+      if (field.heights[i] > 0 && field.heights[i] < min) min = field.heights[i];
+      if (field.heights[i] > max) max = field.heights[i];
+    }
+    return { minH: isFinite(min) ? min : 0, maxH: isFinite(max) ? max : 0 };
+  }, [reverseShadow]);
+
   return (
     <group>
       {showHeightmap && (
@@ -298,15 +394,15 @@ export function ReverseShadowOverlay({
       ))}
 
       {showMeasurementLines && reverseShadow.line5m.length > 0 && (
-        <MeasurementLine points={reverseShadow.line5m} color="#f59e0b" label="5m" />
+        <MeasurementLine points={reverseShadow.line5m} color="#f59e0b" label="5mライン" />
       )}
 
       {showMeasurementLines && reverseShadow.line10m.length > 0 && (
-        <MeasurementLine points={reverseShadow.line10m} color="#ef4444" label="10m" />
+        <MeasurementLine points={reverseShadow.line10m} color="#ef4444" label="10mライン" />
       )}
 
       {showContours && reverseShadow.contourLines.length > 0 && (
-        <ReverseShadowLegend contourLines={reverseShadow.contourLines} />
+        <ReverseShadowLegend contourLines={reverseShadow.contourLines} minH={minH} maxH={maxH} />
       )}
     </group>
   );
