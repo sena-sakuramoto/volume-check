@@ -1,0 +1,23 @@
+{
+  "type": "Feature",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [139.7000, 35.6800],
+      [139.7001, 35.6800],
+      [139.7001, 35.6802],
+      [139.7000, 35.6802],
+      [139.7000, 35.6800]
+    ]]
+  },
+  "properties": {
+    "area": 200.0,
+    "roads": [
+      {
+        "width": 6,
+        "edgeVertexIndices": [0, 1],
+        "direction": "south"
+      }
+    ]
+  }
+}

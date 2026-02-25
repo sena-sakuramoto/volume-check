@@ -176,9 +176,23 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { lat, lng } = body;
 
-    if (typeof lat !== 'number' || typeof lng !== 'number') {
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !isFinite(lat) || !isFinite(lng)) {
       return NextResponse.json(
-        { error: '緯度(lat)と経度(lng)は数値で指定してください' },
+        { error: '緯度(lat)と経度(lng)は有限の数値で指定してください' },
+        { status: 400 }
+      );
+    }
+
+    if (lat < -90 || lat > 90) {
+      return NextResponse.json(
+        { error: `緯度(lat)は-90〜90の範囲で指定してください（受信値: ${lat}）` },
+        { status: 400 }
+      );
+    }
+
+    if (lng < -180 || lng > 180) {
+      return NextResponse.json(
+        { error: `経度(lng)は-180〜180の範囲で指定してください（受信値: ${lng}）` },
         { status: 400 }
       );
     }
@@ -199,8 +213,16 @@ export async function POST(req: NextRequest) {
     );
   } catch (error) {
     console.error('Zoning lookup API error:', error);
+
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: 'リクエストボディのJSON形式が不正です' },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
-      { error: 'サーバーエラーが発生しました' },
+      { error: 'サーバー内部エラーが発生しました' },
       { status: 500 }
     );
   }
@@ -224,7 +246,22 @@ async function tryFetchZoning(
 
   if (DEBUG) console.log(`[zoning-lookup] Fetching tile z=${z} x=${tileX} y=${tileY}: ${url}`);
 
-  const response = await fetch(url);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15_000);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (fetchError) {
+    clearTimeout(timeoutId);
+    if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
+      console.warn(`[zoning-lookup] Tile fetch timed out after 15s: ${url}`);
+      return null;
+    }
+    throw fetchError;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     console.warn(

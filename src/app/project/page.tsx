@@ -11,7 +11,7 @@ import { FloorEditor } from '@/components/ui/FloorEditor';
 import { AiChat } from '@/components/chat/AiChat';
 import { PrintReport } from '@/components/ui/PrintReport';
 import { DEMO_SITE, DEMO_ROADS, DEMO_ZONING } from '@/lib/demo-data';
-import { loadProject } from '@/lib/project-storage';
+import { loadProject, saveProject } from '@/lib/project-storage';
 
 const Scene = dynamic(
   () => import('@/components/three/Scene').then((m) => ({ default: m.Scene })),
@@ -71,6 +71,12 @@ export default function ProjectPage() {
       if (saved.floorHeights.length > 0) setFloorHeights(saved.floorHeights);
     }
   }, []);
+
+  // Auto-save project when inputs change
+  useEffect(() => {
+    if (!site || !zoning || roads.length === 0) return;
+    saveProject({ site, roads, zoning, latitude, floorHeights, savedAt: '' });
+  }, [site, roads, zoning, latitude, floorHeights]);
 
   const [calcError, setCalcError] = useState<string | null>(null);
 
@@ -383,7 +389,7 @@ export default function ProjectPage() {
       </div>
 
       {/* Print-only report */}
-      <PrintReport zoning={zoning} result={volumeResult} siteArea={site?.area ?? null} />
+      <PrintReport zoning={zoning} result={volumeResult} siteArea={site?.area ?? null} floorHeights={effectiveFloorHeights} latitude={latitude} />
     </div>
   );
 }

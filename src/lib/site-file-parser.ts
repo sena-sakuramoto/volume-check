@@ -1,5 +1,5 @@
 /**
- * Client-side parsers for site boundary data files (CSV / GeoJSON).
+ * Client-side parsers for site boundary data files (CSV / GeoJSON / SIMA).
  * No server call needed — parsed directly in the browser.
  */
 
@@ -242,6 +242,79 @@ export function parseGeoJSON(text: string): SiteFileParseResult {
 }
 
 // ---------------------------------------------------------------------------
+// SIMA parser
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse SIMA survey data file (.sim).
+ *
+ * SIMA (Survey Information Manager Application) is a Japanese standard format.
+ * Key record types:
+ *   01,SIMA(VER03)  — header
+ *   A,name,X,Y[,Z]  — survey point (A record)
+ *   99,END           — end marker
+ *
+ * In Japanese surveying: X = north, Y = east.
+ * We convert to: our_x = sima_Y (east), our_y = sima_X (north).
+ */
+export function parseSIMA(text: string): SiteFileParseResult {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  if (lines.length === 0) {
+    throw new Error('SIMAファイルが空です');
+  }
+
+  // Verify it looks like SIMA
+  const header = lines[0].toUpperCase();
+  if (!header.includes('SIMA')) {
+    throw new Error('SIMA形式のヘッダーが見つかりません（01,SIMA...）');
+  }
+
+  const vertices: Point2D[] = [];
+  const pointNames: string[] = [];
+
+  for (const line of lines) {
+    const parts = line.split(',').map((s) => s.trim());
+    if (parts.length < 4) continue;
+
+    // A record: A,point_name,X(north),Y(east)[,Z]
+    if (parts[0].toUpperCase() === 'A') {
+      const simaX = parseFloat(parts[2]); // north
+      const simaY = parseFloat(parts[3]); // east
+
+      if (isNaN(simaX) || isNaN(simaY)) continue;
+
+      // Convert: our x = east (sima Y), our y = north (sima X)
+      vertices.push({ x: simaY, y: simaX });
+      pointNames.push(parts[1]);
+    }
+  }
+
+  if (vertices.length < 3) {
+    throw new Error('3点以上の測量点が必要です（' + vertices.length + '点しかありません）');
+  }
+
+  // Center the coordinates (SIMA uses absolute plane rectangular coords)
+  const cx = vertices.reduce((s, v) => s + v.x, 0) / vertices.length;
+  const cy = vertices.reduce((s, v) => s + v.y, 0) / vertices.length;
+  const centered = vertices.map((v) => ({ x: v.x - cx, y: v.y - cy }));
+
+  const area = calcPolygonArea(centered);
+  if (area <= 0) {
+    throw new Error('有効な多角形になりません（面積が0以下）');
+  }
+
+  return {
+    site: { vertices: centered, area },
+    roads: [],
+    notes: `SIMA測量データから${centered.length}頂点の敷地を読み込みました（${area.toFixed(1)}m²）`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Dispatcher: detect format and parse
 // ---------------------------------------------------------------------------
 
@@ -257,11 +330,18 @@ export function parseSiteFile(
   if (ext === 'geojson' || ext === 'json') {
     return parseGeoJSON(content);
   }
+  if (ext === 'sim') {
+    return parseSIMA(content);
+  }
 
   // Try to auto-detect
   const trimmed = content.trim();
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     return parseGeoJSON(content);
+  }
+  // Check for SIMA header
+  if (trimmed.toUpperCase().startsWith('01,SIMA')) {
+    return parseSIMA(content);
   }
   return parseCSV(content);
 }

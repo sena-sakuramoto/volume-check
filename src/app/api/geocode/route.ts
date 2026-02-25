@@ -37,14 +37,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Call GSI geocoding API
+    // Call GSI geocoding API with 10s timeout
     const gsiUrl = `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(trimmed)}`;
 
-    const response = await fetch(gsiUrl, {
-      headers: {
-        'Accept': 'application/json',
-      },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+    let response: Response;
+    try {
+      response = await fetch(gsiUrl, {
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal,
+      });
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
+        return NextResponse.json(
+          { error: 'ジオコーディングAPIがタイムアウトしました（10秒）' },
+          { status: 504 }
+        );
+      }
+      throw fetchError;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       console.error(`GSI API responded with status ${response.status}`);
@@ -68,6 +84,19 @@ export async function POST(req: NextRequest) {
     const [lng, lat] = first.geometry.coordinates;
     const confirmedAddress = first.properties.title;
 
+    // Validate coordinate ranges
+    if (
+      typeof lat !== 'number' || typeof lng !== 'number' ||
+      !isFinite(lat) || !isFinite(lng) ||
+      lat < -90 || lat > 90 || lng < -180 || lng > 180
+    ) {
+      console.error(`GSI API returned invalid coordinates: lat=${lat}, lng=${lng}`);
+      return NextResponse.json(
+        { error: 'ジオコーディング結果の座標が不正です。住所を確認してください。' },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json({
       lat,
       lng,
@@ -75,8 +104,12 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('Geocode API error:', error);
+    const message =
+      error instanceof SyntaxError
+        ? 'リクエストの形式が不正です'
+        : 'サーバー内部エラーが発生しました';
     return NextResponse.json(
-      { error: 'サーバーエラーが発生しました' },
+      { error: message },
       { status: 500 }
     );
   }

@@ -572,7 +572,7 @@ export function SiteInputPanel({
     async (file: File) => {
       // Check if it's a coordinate data file (CSV / GeoJSON)
       const ext = file.name.toLowerCase().split('.').pop() ?? '';
-      const isDataFile = ['csv', 'geojson', 'json'].includes(ext);
+      const isDataFile = ['csv', 'geojson', 'json', 'sim'].includes(ext);
 
       const validImageTypes = [
         'image/jpeg',
@@ -996,7 +996,7 @@ export function SiteInputPanel({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,application/pdf,.csv,.geojson,.json"
+            accept="image/jpeg,image/png,image/webp,image/heic,application/pdf,.csv,.geojson,.json,.sim"
             onChange={handleFileInput}
             className="hidden"
           />
@@ -1024,7 +1024,11 @@ export function SiteInputPanel({
                 測量図・座標データをドロップ
               </span>
               <span className="text-[10px] text-gray-500">
-                JPEG, PNG, PDF, CSV, GeoJSON
+                JPEG, PNG, PDF, CSV, GeoJSON, SIMA
+              </span>
+              <span className="text-[10px] text-blue-400/70 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                <a href="/samples/site-sample.csv" download className="hover:underline">CSVサンプル</a>
+                <a href="/samples/site-sample.geojson" download className="hover:underline">GeoJSONサンプル</a>
               </span>
             </>
           )}
