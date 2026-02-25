@@ -175,7 +175,7 @@ function ContourLineDisplay({
   colorIndex: number;
 }) {
   const color = CONTOUR_COLORS[colorIndex % CONTOUR_COLORS.length];
-  const TUBE_RADIUS = 0.12;
+  const TUBE_RADIUS = 0.06;
 
   // Chain segments into connected polylines, then render each as a tube at height
   const { meshes, labelPos } = useMemo(() => {
@@ -188,10 +188,14 @@ function ContourLineDisplay({
 
     for (const chain of chains) {
       if (chain.length < 2) continue;
-      // Render contour at its actual height in 3D
+      // Render contour as straight polyline at its actual height (no spline smoothing)
       const points3d = chain.map((p) => new THREE.Vector3(p.x, contour.height, p.y));
-      const curve = new THREE.CatmullRomCurve3(points3d, false, 'centripetal', 0.3);
-      const tubeGeo = new THREE.TubeGeometry(curve, Math.max(4, chain.length * 2), TUBE_RADIUS, 5, false);
+      // Use LineCurve3 segments joined into a CurvePath for straight lines
+      const path = new THREE.CurvePath<THREE.Vector3>();
+      for (let j = 0; j < points3d.length - 1; j++) {
+        path.add(new THREE.LineCurve3(points3d[j], points3d[j + 1]));
+      }
+      const tubeGeo = new THREE.TubeGeometry(path, points3d.length * 2, TUBE_RADIUS, 4, false);
       geos.push(tubeGeo);
     }
 
