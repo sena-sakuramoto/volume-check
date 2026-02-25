@@ -4,7 +4,7 @@ import type {
   VolumeInput,
   VolumeResult,
 } from './types';
-import { distanceToSegment, isInsidePolygon, polygonArea } from './geometry';
+import { distanceToSegment, isInsidePolygon, polygonArea, edgeOutwardAngle } from './geometry';
 import { calculateMaxCoverage } from './coverage';
 import { calculateMaxFloorArea } from './floor-area';
 import { getAbsoluteHeightLimit } from './absolute-height';
@@ -18,6 +18,10 @@ import {
   getAdjacentSetbackParams,
   getNorthSetbackParams,
 } from './zoning';
+import { validateVolumeInput } from './validation';
+import { calculateShadowConstrainedHeight } from './shadow';
+import { generateShadowProjection } from './shadow-projection';
+import type { HeightFieldData, ShadowProjectionResult } from './types';
 
 /** Grid resolution in meters for sampling height field */
 const GRID_RESOLUTION = 0.5;
@@ -51,41 +55,137 @@ export function getSiteEdges(vertices: Point2D[]): SiteEdge[] {
 
 /**
  * Determine whether a site edge coincides with a road edge.
- * Uses distance threshold to match edges (within 0.1m tolerance).
+ * Checks 3 sample points (start, midpoint, end) with 0.5m tolerance.
+ * Requires at least 2 of 3 points to match for robustness against OCR errors.
+ * Returns the matched Road or null.
  */
-export function isRoadEdge(edge: SiteEdge, roads: Road[]): boolean {
-  const midX = (edge.start.x + edge.end.x) / 2;
-  const midY = (edge.start.y + edge.end.y) / 2;
-  const mid: Point2D = { x: midX, y: midY };
+export function matchRoadEdge(edge: SiteEdge, roads: Road[]): Road | null {
+  const samples: Point2D[] = [
+    edge.start,
+    { x: (edge.start.x + edge.end.x) / 2, y: (edge.start.y + edge.end.y) / 2 },
+    edge.end,
+  ];
+  const TOLERANCE = 0.5;
 
   for (const road of roads) {
-    const dist = distanceToSegment(mid, road.edgeStart, road.edgeEnd);
-    if (dist < 0.1) return true;
+    let matchCount = 0;
+    for (const pt of samples) {
+      if (distanceToSegment(pt, road.edgeStart, road.edgeEnd) < TOLERANCE) {
+        matchCount++;
+      }
+    }
+    if (matchCount >= 2) return road;
   }
-  return false;
+  return null;
+}
+
+/**
+ * Legacy compatibility wrapper.
+ * @deprecated Use matchRoadEdge() instead for the matched Road object.
+ */
+export function isRoadEdge(edge: SiteEdge, roads: Road[]): boolean {
+  return matchRoadEdge(edge, roads) !== null;
+}
+
+/**
+ * Compute the coordinate system rotation offset (delta).
+ *
+ * Compass bearings go clockwise (0=N, 90=E), math angles go counterclockwise.
+ * The relationship is: compassBearing = (PI/2 + delta) - mathAngle
+ * where delta is the rotation of the coordinate system.
+ *
+ * From a road with known compass bearing B and observed outward normal math angle θ:
+ *   delta = B + θ - PI/2
+ *
+ * For standard orientation (north=+Y): delta = 0.
+ *
+ * Returns delta in radians, or null if no bearing info is available.
+ */
+export function computeNorthRotation(roads: Road[], _siteVertices: Point2D[]): number | null {
+  const deltas: number[] = [];
+
+  for (const road of roads) {
+    const bearingRad = (road.bearing * Math.PI) / 180;
+    const dx = road.edgeEnd.x - road.edgeStart.x;
+    const dy = road.edgeEnd.y - road.edgeStart.y;
+    const coordAngle = Math.atan2(-dx, dy); // outward normal math angle
+    const delta = bearingRad + coordAngle - Math.PI / 2;
+    deltas.push(delta);
+  }
+
+  if (deltas.length === 0) return null;
+
+  // Circular mean
+  let sinSum = 0, cosSum = 0;
+  for (const d of deltas) {
+    sinSum += Math.sin(d);
+    cosSum += Math.cos(d);
+  }
+  return Math.atan2(sinSum / deltas.length, cosSum / deltas.length);
+}
+
+/**
+ * Get the compass bearing (0=N, 90=E, etc.) of an edge's outward normal,
+ * given the coordinate system rotation offset (delta).
+ *
+ * Formula: compassBearing = (PI/2 + delta) - mathAngle
+ */
+export function edgeCompassBearing(edge: SiteEdge, delta: number): number {
+  const coordAngle = edgeOutwardAngle(edge.start, edge.end);
+  let bearing = (Math.PI / 2 + delta) - coordAngle;
+  // Normalize to [0, 2*PI)
+  bearing = ((bearing % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  return (bearing * 180) / Math.PI; // degrees
 }
 
 /**
  * Identify north-facing boundary edges.
- * North edges are non-road edges whose midpoint has a relatively high y value
- * and whose direction is roughly horizontal (east-west).
  *
- * Strategy: Among all non-road edges, find ones whose midpoint y is within
- * the top 25% of the site's y range AND whose angle from horizontal is
- * below HORIZONTAL_THRESHOLD.
+ * If road bearings are available, uses compass-based detection:
+ * edges whose outward normal bearing is between 315° and 45° (north sector).
+ *
+ * Falls back to Y-coordinate heuristic when no bearing data is available.
  */
 export function getNorthEdges(
   nonRoadEdges: SiteEdge[],
   vertices: Point2D[],
+  roads?: Road[],
 ): SiteEdge[] {
   if (nonRoadEdges.length === 0) return [];
 
+  // Try compass-based detection if roads have bearing info
+  if (roads && roads.length > 0) {
+    const northRotation = computeNorthRotation(roads, vertices);
+    if (northRotation !== null) {
+      const northEdges: SiteEdge[] = [];
+      for (const edge of nonRoadEdges) {
+        const bearing = edgeCompassBearing(edge, northRotation);
+        // North sector: 315° to 45° (i.e., bearing > 315 or bearing < 45)
+        if (bearing >= 315 || bearing <= 45) {
+          northEdges.push(edge);
+        }
+      }
+      if (northEdges.length > 0) return northEdges;
+      // If compass detection found nothing, fall through to heuristic
+    }
+  }
+
+  // Fallback: Y-coordinate heuristic (original algorithm)
+  return getNorthEdgesHeuristic(nonRoadEdges, vertices);
+}
+
+/**
+ * Original Y-coordinate based north edge detection (fallback).
+ */
+function getNorthEdgesHeuristic(
+  nonRoadEdges: SiteEdge[],
+  vertices: Point2D[],
+): SiteEdge[] {
   const allY = vertices.map((v) => v.y);
   const minY = Math.min(...allY);
   const maxY = Math.max(...allY);
   const yRange = maxY - minY;
 
-  // If the site is nearly flat in Y, all edges qualify as "north"
   const yThreshold = yRange > 0 ? maxY - yRange * 0.25 : minY;
 
   const northEdges: SiteEdge[] = [];
@@ -93,18 +193,14 @@ export function getNorthEdges(
     const midY = (edge.start.y + edge.end.y) / 2;
     if (midY < yThreshold) continue;
 
-    // Check if edge is roughly horizontal (east-west direction)
     const dx = edge.end.x - edge.start.x;
     const dy = edge.end.y - edge.start.y;
     const angle = Math.abs(Math.atan2(dy, dx));
-    // Horizontal means angle near 0 or near PI
     if (angle < HORIZONTAL_THRESHOLD || Math.abs(angle - Math.PI) < HORIZONTAL_THRESHOLD) {
       northEdges.push(edge);
     }
   }
 
-  // Fallback: if no clearly horizontal edges found, pick the non-road edge
-  // with the highest midpoint y
   if (northEdges.length === 0 && nonRoadEdges.length > 0) {
     let bestEdge = nonRoadEdges[0];
     let bestY = (bestEdge.start.y + bestEdge.end.y) / 2;
@@ -149,6 +245,7 @@ function buildHeightField(
   roads: Road[],
   adjacentEdges: SiteEdge[],
   northEdges: SiteEdge[],
+  northRotation: number,
 ): HeightField {
   const { zoning } = input;
 
@@ -251,6 +348,18 @@ function buildHeightField(
           );
           if (hdH < h) h = hdH;
         }
+      }
+
+      // Shadow regulation (日影規制) - only if applicable
+      if (input.zoning.shadowRegulation !== null) {
+        const shadowH = calculateShadowConstrainedHeight(
+          point,
+          input.site.vertices,
+          input.zoning.shadowRegulation,
+          input.latitude,
+          northRotation,
+        );
+        if (shadowH < h) h = shadowH;
       }
 
       // Ensure non-negative
@@ -524,6 +633,13 @@ function heightFieldToMesh(field: HeightField): MeshData {
  * 6. Converts height field to 3D mesh (vertices + indices)
  */
 export function generateEnvelope(input: VolumeInput): VolumeResult {
+  // Validate input
+  const validationErrors = validateVolumeInput(input);
+  if (validationErrors.length > 0) {
+    const messages = validationErrors.map(e => `${e.field}: ${e.message}`).join('; ');
+    throw new Error(`入力データが不正です: ${messages}`);
+  }
+
   const { site, zoning, roads } = input;
 
   // 1. Calculate coverage and floor area limits
@@ -541,7 +657,7 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
       nonRoadEdges.push(edge);
     }
   }
-  const northEdges = getNorthEdges(nonRoadEdges, site.vertices);
+  const northEdges = getNorthEdges(nonRoadEdges, site.vertices, roads);
 
   // Separate adjacent-only edges (exclude north edges to avoid double-application)
   const adjacentOnlyEdges = nonRoadEdges.filter(
@@ -550,6 +666,9 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     )
   );
 
+  // Compute north rotation for bearing-based calculations
+  const northRotation = computeNorthRotation(roads, site.vertices) ?? 0;
+
   // 4. Build combined height field (minimum of all restrictions)
   const combinedField = buildHeightField(
     buildablePolygon,
@@ -557,6 +676,7 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     roads,
     adjacentOnlyEdges,
     northEdges,
+    northRotation,
   );
 
   // 5. Determine max height and max floors from the height field
@@ -679,6 +799,44 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     absoluteHeightEnvelope = heightFieldToMesh(absField);
   }
 
+  // Shadow regulation envelope
+  let shadowEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (zoning.shadowRegulation !== null) {
+    const shadowField = buildSetbackHeightField(
+      buildablePolygon,
+      combinedField,
+      (point) => calculateShadowConstrainedHeight(
+        point,
+        site.vertices,
+        zoning.shadowRegulation!,
+        input.latitude,
+        northRotation,
+      ),
+    );
+    shadowEnvelope = heightFieldToMesh(shadowField);
+  }
+
+  // Shadow projection analysis (ground plane visualization)
+  let shadowProjection: ShadowProjectionResult | null = null;
+  if (zoning.shadowRegulation !== null) {
+    const heightFieldData: HeightFieldData = {
+      cols: combinedField.cols,
+      rows: combinedField.rows,
+      originX: combinedField.originX,
+      originY: combinedField.originY,
+      resolution: GRID_RESOLUTION,
+      heights: combinedField.heights,
+      insideMask: combinedField.insideMask,
+    };
+    shadowProjection = generateShadowProjection(
+      heightFieldData,
+      site.vertices,
+      zoning.shadowRegulation,
+      input.latitude,
+      northRotation,
+    );
+  }
+
   return {
     maxFloorArea,
     maxCoverageArea,
@@ -691,7 +849,17 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
       adjacent: adjacentEnvelope,
       north: northEnvelope,
       absoluteHeight: absoluteHeightEnvelope,
-      shadow: null, // Shadow calculation is complex and handled separately
+      shadow: shadowEnvelope,
     },
+    shadowProjection,
+    heightFieldData: zoning.shadowRegulation !== null ? {
+      cols: combinedField.cols,
+      rows: combinedField.rows,
+      originX: combinedField.originX,
+      originY: combinedField.originY,
+      resolution: GRID_RESOLUTION,
+      heights: combinedField.heights,
+      insideMask: combinedField.insideMask,
+    } : null,
   };
 }

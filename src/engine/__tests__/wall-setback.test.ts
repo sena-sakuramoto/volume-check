@@ -137,6 +137,73 @@ describe('applyWallSetback', () => {
   });
 });
 
+describe('concave polygon handling', () => {
+  it('handles L-shaped polygon without crashing', () => {
+    // L-shape: 10x10 main body with 5x5 cut out of upper-right
+    const lShape: Point2D[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 5 },
+      { x: 5, y: 5 },
+      { x: 5, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const result = applyWallSetback(lShape, 1);
+    expect(result.length).toBeGreaterThanOrEqual(3);
+    const area = computeArea(result);
+    expect(area).toBeGreaterThan(0);
+    expect(area).toBeLessThan(computeArea(lShape));
+  });
+
+  it('handles U-shaped polygon without crashing', () => {
+    // U-shape: open at top
+    const uShape: Point2D[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 7, y: 10 },
+      { x: 7, y: 3 },
+      { x: 3, y: 3 },
+      { x: 3, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const result = applyWallSetback(uShape, 0.5);
+    expect(result.length).toBeGreaterThanOrEqual(3);
+    const area = computeArea(result);
+    expect(area).toBeGreaterThan(0);
+    expect(area).toBeLessThan(computeArea(uShape));
+  });
+
+  it('existing rectangle tests still work after concave fix', () => {
+    const rectangle: Point2D[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 15 },
+      { x: 0, y: 15 },
+    ];
+    const result = applyWallSetback(rectangle, 1);
+    expect(result).toHaveLength(4);
+    expect(result[0].x).toBeCloseTo(1, 5);
+    expect(result[0].y).toBeCloseTo(1, 5);
+  });
+
+  it('handles narrow corridor section in L-shape', () => {
+    // Narrow L-shape where the corridor is only 3m wide
+    const narrowL: Point2D[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 3 },
+      { x: 3, y: 3 },
+      { x: 3, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const result = applyWallSetback(narrowL, 1);
+    expect(result.length).toBeGreaterThanOrEqual(3);
+    const area = computeArea(result);
+    expect(area).toBeGreaterThan(0);
+  });
+});
+
 /** Helper: Shoelace formula for polygon area */
 function computeArea(vertices: Point2D[]): number {
   let area = 0;

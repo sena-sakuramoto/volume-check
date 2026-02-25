@@ -148,6 +148,10 @@ export interface VolumeResult {
     absoluteHeight: { vertices: Float32Array; indices: Uint32Array } | null;
     shadow: { vertices: Float32Array; indices: Uint32Array } | null;
   };
+  /** Shadow projection data for ground plane visualization (日影投影) */
+  shadowProjection: ShadowProjectionResult | null;
+  /** Height field data for time-specific shadow computation */
+  heightFieldData: HeightFieldData | null;
 }
 
 /** Design proposal for compliance checking */
@@ -193,4 +197,40 @@ export interface ProjectData {
   zoning: ZoningData;
   latitude: number;
   floorHeights: number[];
+}
+
+// ---------------------------------------------------------------------------
+// Shadow projection types (日影投影分析)
+// ---------------------------------------------------------------------------
+
+/** Height field data for shadow projection (serializable) */
+export interface HeightFieldData {
+  cols: number;
+  rows: number;
+  originX: number;
+  originY: number;
+  resolution: number;
+  heights: Float32Array;
+  insideMask: Uint8Array;
+}
+
+/** Shadow grid data - hours of shadow at each point */
+export interface ShadowGridData {
+  cols: number;
+  rows: number;
+  originX: number;
+  originY: number;
+  resolution: number;
+  /** Shadow hours at each grid point */
+  hours: Float32Array;
+}
+
+/** Result of shadow projection analysis */
+export interface ShadowProjectionResult {
+  /** Equal-time shadow grid (等時間日影図) */
+  shadowGrid: ShadowGridData;
+  /** 5m measurement line offset from site boundary */
+  line5m: Point2D[];
+  /** 10m measurement line offset from site boundary */
+  line10m: Point2D[];
 }

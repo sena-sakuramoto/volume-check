@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
+import { z } from 'zod';
 
 /**
  * Analyze a survey map (測量図) or property summary (概要書) image
@@ -173,9 +174,48 @@ export async function POST(req: NextRequest) {
       jsonStr = jsonMatch[1];
     }
 
+    // Zod schema for Gemini OCR output validation
+    const GeminiOutputSchema = z.object({
+      type: z.enum(['survey', 'summary', 'unknown']).optional(),
+      site: z.object({
+        vertices: z.array(z.object({ x: z.number(), y: z.number() })).min(3),
+        area: z.number().positive(),
+        frontageWidth: z.number().positive().optional(),
+        depth: z.number().positive().optional(),
+      }),
+      roads: z.array(z.object({
+        direction: z.enum(['south', 'north', 'east', 'west']),
+        width: z.number().positive(),
+        edgeVertexIndices: z.array(z.number().int().min(0)).length(2),
+      })).optional(),
+      zoning: z.object({
+        district: z.string().nullable().optional(),
+        coverageRatio: z.number().min(0).max(1).nullable().optional(),
+        floorAreaRatio: z.number().min(0).nullable().optional(),
+        fireDistrict: z.string().nullable().optional(),
+      }).optional(),
+      confidence: z.enum(['high', 'medium', 'low']).optional(),
+      notes: z.string().optional(),
+    });
+
     try {
       const parsed = JSON.parse(jsonStr.trim());
-      return NextResponse.json(parsed);
+
+      // Validate with Zod
+      const validated = GeminiOutputSchema.safeParse(parsed);
+      if (!validated.success) {
+        console.error('Gemini output validation failed:', validated.error.issues);
+        return NextResponse.json(
+          {
+            error: 'AIの解析結果が期待された形式と一致しませんでした。別の画像をお試しください。',
+            validationErrors: validated.error.issues.map(i => `${i.path.join('.')}: ${i.message}`),
+            raw: parsed,
+          },
+          { status: 422 },
+        );
+      }
+
+      return NextResponse.json(validated.data);
     } catch {
       console.error('Failed to parse Gemini response as JSON:', text);
       return NextResponse.json(

@@ -34,6 +34,47 @@ export function edgeOutwardNormal(a: Point2D, b: Point2D): Point2D {
   return { x: dy / len, y: -dx / len };
 }
 
+/**
+ * Compute the outward normal angle (radians, math convention: 0=+X, PI/2=+Y)
+ * for a CW polygon edge from a to b.
+ * For CW winding, outward normal of edge (a→b) is (dy, -dx).
+ */
+export function edgeOutwardAngle(a: Point2D, b: Point2D): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  // Outward normal for CW winding: (dy, -dx)
+  return Math.atan2(-dx, dy);
+}
+
+/**
+ * Compute intersection point of two line segments.
+ * Returns the intersection point or null if segments don't intersect.
+ */
+export function segmentsIntersectionPoint(
+  a1: Point2D,
+  a2: Point2D,
+  b1: Point2D,
+  b2: Point2D,
+): Point2D | null {
+  const d1x = a2.x - a1.x;
+  const d1y = a2.y - a1.y;
+  const d2x = b2.x - b1.x;
+  const d2y = b2.y - b1.y;
+
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-12) return null; // Parallel
+
+  const t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / denom;
+  const u = ((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) / denom;
+
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null; // Outside segments
+
+  return {
+    x: a1.x + t * d1x,
+    y: a1.y + t * d1y,
+  };
+}
+
 /** Check if a point is inside a polygon (ray casting) */
 export function isInsidePolygon(point: Point2D, polygon: Point2D[]): boolean {
   let inside = false;

@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import type { SiteBoundary, Road, ZoningData, VolumeResult } from '@/engine/types';
-import { generateEnvelope } from '@/engine';
+import { generateEnvelope, getShadowMaskAtTime } from '@/engine';
 import { SiteInputPanel } from '@/components/ui/SiteInputPanel';
 import { RegulationPanel } from '@/components/ui/RegulationPanel';
 import { LayerControls } from '@/components/ui/LayerControls';
@@ -30,7 +30,10 @@ const DEFAULT_LAYERS: Record<string, boolean> = {
   adjacent: true,
   north: true,
   absoluteHeight: true,
-  shadow: false,
+  shadow: true,
+  shadowHeatmap: true,
+  shadowTimeShadow: false,
+  shadowMeasurementLines: true,
   floorPlates: true,
 };
 
@@ -53,6 +56,7 @@ export default function ProjectPage() {
   const [floorHeights, setFloorHeights] = useState<number[]>([]);
   const [activeTab, setActiveTab] = useState<MobileTab>('input');
   const [showLayers, setShowLayers] = useState(false);
+  const [shadowTimeValue, setShadowTimeValue] = useState(120); // slider value: 0=8:00, 480=16:00 (minutes from 8:00)
 
   // Load saved project on mount
   useEffect(() => {
@@ -102,6 +106,33 @@ export default function ProjectPage() {
     return result;
   }, [maxFloors, floorHeights]);
 
+  // Shadow time from slider value
+  const shadowTime = useMemo(() => {
+    const totalMinutes = 8 * 60 + shadowTimeValue;
+    return { hour: Math.floor(totalMinutes / 60), minute: totalMinutes % 60 };
+  }, [shadowTimeValue]);
+
+  // Shadow mask for time-specific display
+  const shadowMask = useMemo(() => {
+    if (!volumeResult?.heightFieldData || !site || !zoning?.shadowRegulation) return null;
+    if (!layers.shadowTimeShadow) return null;
+
+    try {
+      const maskResult = getShadowMaskAtTime(
+        volumeResult.heightFieldData,
+        site.vertices,
+        zoning.shadowRegulation.measurementHeight,
+        latitude,
+        0, // northRotation - will be computed internally
+        shadowTime.hour,
+        shadowTime.minute,
+      );
+      return maskResult.mask;
+    } catch {
+      return null;
+    }
+  }, [volumeResult, site, zoning, latitude, layers.shadowTimeShadow, shadowTime]);
+
   const handleLoadDemo = useCallback(() => {
     setSite(DEMO_SITE);
     setRoads(DEMO_ROADS);
@@ -126,6 +157,9 @@ export default function ProjectPage() {
     absoluteHeight: layers.absoluteHeight ?? false,
     shadow: layers.shadow ?? false,
     floorPlates: layers.floorPlates ?? true,
+    shadowHeatmap: layers.shadowHeatmap ?? true,
+    shadowTimeShadow: layers.shadowTimeShadow ?? false,
+    shadowMeasurementLines: layers.shadowMeasurementLines ?? true,
   };
 
   // Check if bottom sheet should be visible (mobile only)
@@ -167,6 +201,33 @@ export default function ProjectPage() {
           />
           <div className="border-t border-gray-800" />
           <LayerControls layers={layers} onToggle={handleToggleLayer} />
+          {/* Shadow time slider */}
+          {layers.shadowTimeShadow && (
+            <div className="border-t border-gray-800 p-3">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                日影時刻
+              </h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 w-12">
+                  {shadowTime.hour}:{String(shadowTime.minute).padStart(2, '0')}
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={480}
+                  step={10}
+                  value={shadowTimeValue}
+                  onChange={(e) => setShadowTimeValue(Number(e.target.value))}
+                  className="flex-1 h-1.5 accent-blue-500"
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                <span>8:00</span>
+                <span>12:00</span>
+                <span>16:00</span>
+              </div>
+            </div>
+          )}
         </aside>
 
         {/* Center: 3D Scene */}
@@ -183,6 +244,8 @@ export default function ProjectPage() {
             volumeResult={volumeResult}
             floorHeights={effectiveFloorHeights}
             layers={typedLayers}
+            shadowTime={layers.shadowTimeShadow ? shadowTime : null}
+            shadowMask={shadowMask}
           />
         </main>
 
@@ -221,6 +284,8 @@ export default function ProjectPage() {
             volumeResult={volumeResult}
             floorHeights={effectiveFloorHeights}
             layers={typedLayers}
+            shadowTime={layers.shadowTimeShadow ? shadowTime : null}
+            shadowMask={shadowMask}
           />
         </div>
 

@@ -1,5 +1,5 @@
 export { generateEnvelope } from './envelope';
-export { getSiteEdges, isRoadEdge, getNorthEdges } from './envelope';
+export { getSiteEdges, isRoadEdge, matchRoadEdge, getNorthEdges, computeNorthRotation, edgeCompassBearing } from './envelope';
 export type { SiteEdge } from './envelope';
 export { calculateMaxCoverage } from './coverage';
 export { calculateMaxFloorArea } from './floor-area';
@@ -16,4 +16,7 @@ export {
   getNorthSetbackParams,
   isResidentialZone,
 } from './zoning';
+export { validateVolumeInput, isSimplePolygon } from './validation';
+export { solarPosition, shadowTip, calculateShadowConstrainedHeight, solarAzimuthToCompass } from './shadow';
+export { generateShadowProjection, getShadowMaskAtTime } from './shadow-projection';
 export type * from './types';

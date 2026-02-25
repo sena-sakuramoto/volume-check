@@ -13,6 +13,7 @@ import { SiteGround } from './SiteGround';
 import { VolumeEnvelope } from './VolumeEnvelope';
 import { SetbackLines } from './SetbackLines';
 import { FloorPlates } from './FloorPlates';
+import { ShadowOverlay } from './ShadowOverlay';
 import type { VolumeResult, SiteBoundary, Road, ZoningData } from '@/engine/types';
 
 interface SceneProps {
@@ -28,7 +29,14 @@ interface SceneProps {
     absoluteHeight: boolean;
     shadow: boolean;
     floorPlates: boolean;
+    shadowHeatmap: boolean;
+    shadowTimeShadow: boolean;
+    shadowMeasurementLines: boolean;
   };
+  /** Shadow time for time-specific display */
+  shadowTime: { hour: number; minute: number } | null;
+  /** Shadow mask for current time */
+  shadowMask: Uint8Array | null;
 }
 
 /** Compute a reasonable camera position based on site bounds */
@@ -66,7 +74,7 @@ function computeTarget(site: SiteBoundary | null): [number, number, number] {
   return [cx, 3, cy];
 }
 
-export function Scene({ site, roads, zoning, volumeResult, floorHeights, layers }: SceneProps) {
+export function Scene({ site, roads, zoning, volumeResult, floorHeights, layers, shadowTime, shadowMask }: SceneProps) {
   const cameraPos = useMemo(() => computeCameraPosition(site), [site]);
   const target = useMemo(() => computeTarget(site), [site]);
 
@@ -120,6 +128,19 @@ export function Scene({ site, roads, zoning, volumeResult, floorHeights, layers 
             floorHeights={floorHeights}
             maxHeight={volumeResult.maxHeight}
             visible={layers.floorPlates}
+          />
+        )}
+
+        {/* Shadow projection overlay (日影投影) */}
+        {site && volumeResult?.shadowProjection && (
+          <ShadowOverlay
+            shadowProjection={volumeResult.shadowProjection}
+            siteVertices={site.vertices}
+            shadowTime={shadowTime ?? null}
+            shadowMask={shadowMask ?? null}
+            showHeatmap={layers.shadowHeatmap}
+            showMeasurementLines={layers.shadowMeasurementLines}
+            showTimeShadow={layers.shadowTimeShadow}
           />
         )}
 
