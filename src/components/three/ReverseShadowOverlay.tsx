@@ -20,28 +20,27 @@ interface ReverseShadowOverlayProps {
 // Color helpers
 // ---------------------------------------------------------------------------
 
-function getHeightColor(h: number, minH: number, maxH: number): { r: number; g: number; b: number; a: number } {
-  if (maxH <= minH) return { r: 100, g: 200, b: 100, a: 200 };
-  const t = Math.max(0, Math.min(1, (h - minH) / (maxH - minH)));
-  // Blue-purple (constrained) → Cyan → Yellow → Green (less constrained)
+/** Height → RGB color for vertex coloring */
+function getHeightColorVec(t: number): { r: number; g: number; b: number } {
+  // Blue-purple (constrained/low) → Cyan → Yellow → Green (high/less constrained)
   let r: number, g: number, b: number;
   if (t < 0.33) {
     const s = t / 0.33;
-    r = Math.round(180 * (1 - s) + 20 * s);
-    g = Math.round(40 * (1 - s) + 200 * s);
-    b = Math.round(220 * (1 - s) + 220 * s);
+    r = 0.70 * (1 - s) + 0.08 * s;
+    g = 0.16 * (1 - s) + 0.78 * s;
+    b = 0.86 * (1 - s) + 0.86 * s;
   } else if (t < 0.66) {
     const s = (t - 0.33) / 0.33;
-    r = Math.round(20 * (1 - s) + 240 * s);
-    g = Math.round(200 * (1 - s) + 220 * s);
-    b = Math.round(220 * (1 - s) + 40 * s);
+    r = 0.08 * (1 - s) + 0.94 * s;
+    g = 0.78 * (1 - s) + 0.86 * s;
+    b = 0.86 * (1 - s) + 0.16 * s;
   } else {
     const s = (t - 0.66) / 0.34;
-    r = Math.round(240 * (1 - s) + 30 * s);
-    g = Math.round(220 * (1 - s) + 200 * s);
-    b = Math.round(40 * (1 - s) + 30 * s);
+    r = 0.94 * (1 - s) + 0.12 * s;
+    g = 0.86 * (1 - s) + 0.78 * s;
+    b = 0.16 * (1 - s) + 0.12 * s;
   }
-  return { r, g, b, a: 200 };
+  return { r, g, b };
 }
 
 // Highly visible contour colors
@@ -54,64 +53,118 @@ const CONTOUR_COLORS = [
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/** Reverse shadow height heatmap - rendered as a large, visible overlay */
-function ShadowHeightmap({ field }: { field: HeightFieldData }) {
-  const { texture, centerX, centerZ, width, height } = useMemo(() => {
+/**
+ * 3D surface mesh built from the reverse shadow height field.
+ * Each grid point becomes a vertex at (x, height, z),
+ * creating a terrain-like surface showing the max buildable height.
+ */
+function ShadowHeightSurface({ field }: { field: HeightFieldData }) {
+  const { geometry, wireGeometry } = useMemo(() => {
     const { cols, rows, originX, originY, resolution, heights, insideMask } = field;
 
+    // Find min/max heights for color mapping
     let minH = Infinity, maxH = -Infinity;
     for (let i = 0; i < heights.length; i++) {
       if (insideMask[i] === 0) continue;
       if (heights[i] > 0 && heights[i] < minH) minH = heights[i];
       if (heights[i] > maxH) maxH = heights[i];
     }
+    if (!isFinite(minH)) minH = 0;
+    if (!isFinite(maxH)) maxH = 0;
 
-    const data = new Uint8Array(cols * rows * 4);
-    for (let i = 0; i < cols * rows; i++) {
-      if (insideMask[i] === 0 || heights[i] <= 0) {
-        data[i * 4 + 3] = 0;
-        continue;
+    // Build vertex data: position + color
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+
+    // Map from (row, col) → vertex index (-1 if outside)
+    const vertexMap = new Int32Array(rows * cols).fill(-1);
+    let vertexCount = 0;
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const idx = row * cols + col;
+        if (insideMask[idx] === 0 || heights[idx] <= 0) continue;
+
+        const x = originX + col * resolution;
+        const z = originY + row * resolution;
+        const y = heights[idx]; // height becomes Y in Three.js
+
+        positions.push(x, y, z);
+
+        // Color based on height
+        const t = maxH > minH ? Math.max(0, Math.min(1, (y - minH) / (maxH - minH))) : 0.5;
+        const c = getHeightColorVec(t);
+        colors.push(c.r, c.g, c.b);
+
+        vertexMap[idx] = vertexCount++;
       }
-      const color = getHeightColor(heights[i], minH, maxH);
-      data[i * 4] = color.r;
-      data[i * 4 + 1] = color.g;
-      data[i * 4 + 2] = color.b;
-      data[i * 4 + 3] = color.a;
     }
 
-    const tex = new THREE.DataTexture(data, cols, rows, THREE.RGBAFormat);
-    tex.needsUpdate = true;
-    // Use linear filter for smooth gradients instead of pixelated blocks
-    tex.magFilter = THREE.LinearFilter;
-    tex.minFilter = THREE.LinearFilter;
+    // Build triangles: connect adjacent grid points
+    for (let row = 0; row < rows - 1; row++) {
+      for (let col = 0; col < cols - 1; col++) {
+        const i00 = vertexMap[row * cols + col];
+        const i10 = vertexMap[row * cols + (col + 1)];
+        const i01 = vertexMap[(row + 1) * cols + col];
+        const i11 = vertexMap[(row + 1) * cols + (col + 1)];
 
-    const w = cols * resolution;
-    const h2 = rows * resolution;
-    return {
-      texture: tex,
-      centerX: originX + w / 2,
-      centerZ: originY + h2 / 2,
-      width: w,
-      height: h2,
-    };
+        // Need at least 3 valid vertices to form a triangle
+        if (i00 >= 0 && i10 >= 0 && i01 >= 0) {
+          indices.push(i00, i10, i01);
+        }
+        if (i10 >= 0 && i11 >= 0 && i01 >= 0) {
+          indices.push(i10, i11, i01);
+        }
+      }
+    }
+
+    const posArr = new Float32Array(positions);
+    const colArr = new Float32Array(colors);
+    const idxArr = new Uint32Array(indices);
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
+    geo.setIndex(new THREE.BufferAttribute(idxArr, 1));
+    geo.computeVertexNormals();
+
+    // Clone for wireframe
+    const wGeo = geo.clone();
+
+    return { geometry: geo, wireGeometry: wGeo };
   }, [field]);
 
   return (
-    <mesh rotation-x={-Math.PI / 2} position={[centerX, 0.06, centerZ]}>
-      <planeGeometry args={[width, height]} />
-      <meshBasicMaterial
-        map={texture}
-        transparent
-        alphaTest={0.01}
-        side={THREE.DoubleSide}
-        depthWrite={false}
-      />
-    </mesh>
+    <group>
+      {/* Solid semi-transparent surface with vertex colors */}
+      <mesh geometry={geometry}>
+        <meshStandardMaterial
+          vertexColors
+          transparent
+          opacity={0.55}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Wireframe overlay */}
+      <mesh geometry={wireGeometry}>
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.15}
+          wireframe
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
   );
 }
 
 /**
- * Contour line rendered as a thick tube mesh (not lineSegments).
+ * Contour line rendered as a thick tube mesh at the actual 3D height.
  * WebGL linewidth is always 1px, so we use TubeGeometry for visibility.
  */
 function ContourLineDisplay({
@@ -122,35 +175,33 @@ function ContourLineDisplay({
   colorIndex: number;
 }) {
   const color = CONTOUR_COLORS[colorIndex % CONTOUR_COLORS.length];
-  const TUBE_RADIUS = 0.08;
-  const Y_OFFSET = 0.12;
+  const TUBE_RADIUS = 0.12;
 
-  // Chain segments into connected polylines, then render each as a tube
+  // Chain segments into connected polylines, then render each as a tube at height
   const { meshes, labelPos } = useMemo(() => {
     if (contour.segments.length === 0) {
       return { meshes: [] as THREE.BufferGeometry[], labelPos: [0, 0, 0] as [number, number, number] };
     }
 
-    // Build adjacency: chain segments that share endpoints
     const chains = chainSegments(contour.segments);
-
     const geos: THREE.BufferGeometry[] = [];
 
     for (const chain of chains) {
       if (chain.length < 2) continue;
-      const points3d = chain.map((p) => new THREE.Vector3(p.x, Y_OFFSET, p.y));
+      // Render contour at its actual height in 3D
+      const points3d = chain.map((p) => new THREE.Vector3(p.x, contour.height, p.y));
       const curve = new THREE.CatmullRomCurve3(points3d, false, 'centripetal', 0.3);
-      const tubeGeo = new THREE.TubeGeometry(curve, Math.max(4, chain.length * 2), TUBE_RADIUS, 4, false);
+      const tubeGeo = new THREE.TubeGeometry(curve, Math.max(4, chain.length * 2), TUBE_RADIUS, 5, false);
       geos.push(tubeGeo);
     }
 
     // Label at midpoint of the longest chain
     const longest = chains.reduce((a, b) => (a.length > b.length ? a : b), chains[0] ?? []);
     const mid = longest[Math.floor(longest.length / 2)] ?? contour.segments[0].start;
-    const lp: [number, number, number] = [mid.x, Y_OFFSET + 0.3, mid.y];
+    const lp: [number, number, number] = [mid.x, contour.height + 0.5, mid.y];
 
     return { meshes: geos, labelPos: lp };
-  }, [contour.segments]);
+  }, [contour.segments, contour.height]);
 
   if (meshes.length === 0) return null;
 
@@ -168,7 +219,7 @@ function ContourLineDisplay({
             color,
             padding: '2px 6px',
             borderRadius: '3px',
-            fontSize: '11px',
+            fontSize: '12px',
             fontWeight: 700,
             whiteSpace: 'nowrap',
             border: `2px solid ${color}`,
@@ -186,7 +237,7 @@ function ContourLineDisplay({
 function chainSegments(segments: { start: Point2D; end: Point2D }[]): Point2D[][] {
   if (segments.length === 0) return [];
 
-  const EPS = 0.01; // tolerance for matching endpoints
+  const EPS = 0.01;
   const used = new Set<number>();
   const chains: Point2D[][] = [];
 
@@ -250,7 +301,7 @@ function chainSegments(segments: { start: Point2D; end: Point2D }[]): Point2D[][
   return chains;
 }
 
-/** Dashed measurement line (5m/10m offset) rendered as tube for visibility */
+/** Dashed measurement line (5m/10m offset) */
 function MeasurementLine({
   points,
   color,
@@ -302,7 +353,7 @@ function MeasurementLine({
   );
 }
 
-/** Legend for reverse shadow contour lines */
+/** Legend for reverse shadow */
 function ReverseShadowLegend({ contourLines, minH, maxH }: { contourLines: ContourLine[]; minH: number; maxH: number }) {
   return (
     <Html
@@ -336,7 +387,7 @@ function ReverseShadowLegend({ contourLines, minH, maxH }: { contourLines: Conto
           border: '1px solid rgba(255,255,255,0.15)',
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: '2px', fontSize: '13px' }}>逆日影ライン</div>
+        <div style={{ fontWeight: 700, marginBottom: '2px', fontSize: '13px' }}>逆日影 (日影高さ制限面)</div>
         <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px' }}>
           日影による最大高さ: {minH.toFixed(1)}m 〜 {maxH.toFixed(1)}m
         </div>
@@ -385,10 +436,12 @@ export function ReverseShadowOverlay({
 
   return (
     <group>
+      {/* 3D height surface (日影高さ制限面) */}
       {showHeightmap && (
-        <ShadowHeightmap field={reverseShadow.shadowHeightField} />
+        <ShadowHeightSurface field={reverseShadow.shadowHeightField} />
       )}
 
+      {/* Contour lines at their actual 3D heights */}
       {showContours && reverseShadow.contourLines.map((cl, i) => (
         <ContourLineDisplay key={cl.height} contour={cl} colorIndex={i} />
       ))}
