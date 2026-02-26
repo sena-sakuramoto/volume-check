@@ -1,64 +1,77 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import type { SiteBoundary, Road, ZoningData, VolumeResult } from '@/engine/types';
-import { generateEnvelope, getShadowMaskAtTime } from '@/engine';
-import { SiteInputPanel } from '@/components/ui/SiteInputPanel';
-import { RegulationPanel } from '@/components/ui/RegulationPanel';
-import { LayerControls } from '@/components/ui/LayerControls';
-import { FloorEditor } from '@/components/ui/FloorEditor';
-import { AiChat } from '@/components/chat/AiChat';
-import { PrintReport } from '@/components/ui/PrintReport';
+import type { SiteBoundary, Road, ZoningData, ZoningDistrict, FireDistrict, HeightDistrict } from '@/engine/types';
+import { useVolumeCalculation } from '@/hooks/useVolumeCalculation';
+import { useShadow } from '@/hooks/useShadow';
+import { useAutoSave, loadProject } from '@/hooks/useAutoSave';
+import { useLayerPresets, type LayerState } from '@/hooks/useLayerPresets';
 import { DEMO_SITE, DEMO_ROADS, DEMO_ZONING } from '@/lib/demo-data';
-import { loadProject, saveProject } from '@/lib/project-storage';
+import { Sidebar } from '@/components/sidebar/Sidebar';
+import type { Step } from '@/components/sidebar/SidebarStepper';
+import { SiteSection } from '@/components/sidebar/SiteSection';
+import { ZoningSection } from '@/components/sidebar/ZoningSection';
+import { ResultsSection } from '@/components/sidebar/ResultsSection';
+import { LayerPresetBar } from '@/components/layers/LayerPresetBar';
+import { HeroMetrics } from '@/components/results/HeroMetrics';
+import { BottomSheet } from '@/components/mobile/BottomSheet';
+import { MobileStepper } from '@/components/mobile/MobileStepper';
+import { PrintReport } from '@/components/ui/PrintReport';
+import { Slider } from '@/components/ui/shadcn/slider';
+import type { RoadConfig } from '@/components/site/site-types';
+import { buildZoningData } from '@/components/site/site-helpers';
 
 const Scene = dynamic(
   () => import('@/components/three/Scene').then((m) => ({ default: m.Scene })),
   {
     ssr: false,
     loading: () => (
-      <div className="flex items-center justify-center h-full bg-gray-900 text-gray-400">
+      <div className="flex items-center justify-center h-full bg-background text-muted-foreground">
         3Dビューを読み込み中...
       </div>
     ),
   },
 );
 
-const DEFAULT_LAYERS: Record<string, boolean> = {
-  road: true,
-  adjacent: true,
-  north: true,
-  absoluteHeight: true,
-  shadow: true,
-  reverseShadowContours: true,
-  reverseShadowHeightmap: true,
-  shadowMeasurementLines: true,
-  shadowHeatmap: false,
-  shadowTimeShadow: false,
-  floorPlates: true,
-};
-
-type MobileTab = 'input' | '3d' | 'result' | 'ai';
-
-const TAB_DEFS: { key: MobileTab; label: string }[] = [
-  { key: 'input', label: '入力' },
-  { key: '3d', label: '3D' },
-  { key: 'result', label: '結果' },
-  { key: 'ai', label: 'AI' },
-];
-
 export default function ProjectPage() {
+  // Core state
   const [site, setSite] = useState<SiteBoundary | null>(null);
   const [roads, setRoads] = useState<Road[]>([]);
   const [zoning, setZoning] = useState<ZoningData | null>(null);
-  const [layers, setLayers] = useState<Record<string, boolean>>(DEFAULT_LAYERS);
-  const [isLoading] = useState(false);
   const [latitude, setLatitude] = useState(35.68);
   const [floorHeights, setFloorHeights] = useState<number[]>([]);
-  const [activeTab, setActiveTab] = useState<MobileTab>('input');
-  const [showLayers, setShowLayers] = useState(false);
-  const [shadowTimeValue, setShadowTimeValue] = useState(120); // slider value: 0=8:00, 480=16:00 (minutes from 8:00)
+  const [shadowTimeValue, setShadowTimeValue] = useState(120);
+
+  // UI state
+  const [activeStep, setActiveStep] = useState<Step>(1);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Zoning editor state (lifted for cross-step coordination)
+  const [selectedDistrict, setSelectedDistrict] = useState<ZoningDistrict | null>(null);
+  const [coverageOverride, setCoverageOverride] = useState('');
+  const [farOverride, setFarOverride] = useState('');
+  const [fireDistrict, setFireDistrict] = useState<FireDistrict>('指定なし');
+  const [heightDistrictType, setHeightDistrictType] = useState<HeightDistrict['type']>('指定なし');
+  const [isCornerLot, setIsCornerLot] = useState(false);
+  const [roadConfigs, setRoadConfigs] = useState<RoadConfig[]>([
+    { id: '1', width: 6, direction: 'south', customWidth: '' },
+  ]);
+
+  // Hooks
+  const { preset, layers, selectPreset, toggleLayer } = useLayerPresets();
+  const { volumeResult, calcError, effectiveFloorHeights } = useVolumeCalculation({
+    site, zoning, roads, latitude, floorHeights,
+  });
+  const { shadowTime, shadowMask } = useShadow({
+    shadowTimeValue,
+    volumeResult,
+    site,
+    zoning,
+    latitude,
+    showTimeShadow: layers.shadowTimeShadow,
+  });
+  useAutoSave({ site, roads, zoning, latitude, floorHeights });
 
   // Load saved project on mount
   useEffect(() => {
@@ -72,181 +85,200 @@ export default function ProjectPage() {
     }
   }, []);
 
-  // Auto-save project when inputs change
+  // Auto-advance steps
   useEffect(() => {
-    if (!site || !zoning || roads.length === 0) return;
-    saveProject({ site, roads, zoning, latitude, floorHeights, savedAt: '' });
-  }, [site, roads, zoning, latitude, floorHeights]);
+    if (site && roads.length > 0 && !zoning) setActiveStep(2);
+    if (zoning && volumeResult) setActiveStep(3);
+  }, [site, roads, zoning, volumeResult]);
 
-  const [calcError, setCalcError] = useState<string | null>(null);
+  // Consolidated zoning rebuild helper
+  const rebuildZoning = useCallback((overrides: {
+    dist?: ZoningDistrict; cov?: string; far?: string;
+    fire?: FireDistrict; hd?: HeightDistrict['type']; corner?: boolean;
+  } = {}) => {
+    const dist = overrides.dist ?? selectedDistrict;
+    if (!dist) return;
+    const cov = overrides.cov ?? coverageOverride;
+    const far = overrides.far ?? farOverride;
+    setZoning(buildZoningData(dist, {
+      coverageRatio: cov ? parseFloat(cov) / 100 : undefined,
+      floorAreaRatio: far ? parseFloat(far) / 100 : undefined,
+      fireDistrict: overrides.fire ?? fireDistrict,
+      heightDistrict: { type: overrides.hd ?? heightDistrictType },
+      isCornerLot: overrides.corner ?? isCornerLot,
+    }));
+  }, [selectedDistrict, coverageOverride, farOverride, fireDistrict, heightDistrictType, isCornerLot]);
 
-  // Calculate volume result whenever inputs change
-  const volumeResult: VolumeResult | null = useMemo(() => {
-    if (!site || !zoning || roads.length === 0) {
-      setCalcError(null);
-      return null;
-    }
-    try {
-      setCalcError(null);
-      return generateEnvelope({
-        site,
-        zoning,
-        roads,
-        latitude,
-        floorHeights: floorHeights.length > 0 ? floorHeights : undefined,
-      });
-    } catch (e) {
-      setCalcError(e instanceof Error ? e.message : '計算エラーが発生しました');
-      return null;
-    }
-  }, [site, zoning, roads, latitude, floorHeights]);
-
-  // Derive effective floor heights from maxFloors
-  const maxFloors = volumeResult?.maxFloors ?? 0;
-  const effectiveFloorHeights = useMemo(() => {
-    if (maxFloors <= 0) return [];
-    if (floorHeights.length === maxFloors) return floorHeights;
-    // Preserve existing values, fill missing with 3.0
-    const result: number[] = [];
-    for (let i = 0; i < maxFloors; i++) {
-      result.push(i < floorHeights.length ? floorHeights[i] : 3.0);
-    }
-    return result;
-  }, [maxFloors, floorHeights]);
-
-  // Shadow time from slider value
-  const shadowTime = useMemo(() => {
-    const totalMinutes = 8 * 60 + shadowTimeValue;
-    return { hour: Math.floor(totalMinutes / 60), minute: totalMinutes % 60 };
-  }, [shadowTimeValue]);
-
-  // Shadow mask for time-specific display
-  const shadowMask = useMemo(() => {
-    if (!volumeResult?.heightFieldData || !site || !zoning?.shadowRegulation) return null;
-    if (!layers.shadowTimeShadow) return null;
-
-    try {
-      const maskResult = getShadowMaskAtTime(
-        volumeResult.heightFieldData,
-        site.vertices,
-        zoning.shadowRegulation.measurementHeight,
-        latitude,
-        0, // northRotation - will be computed internally
-        shadowTime.hour,
-        shadowTime.minute,
-      );
-      return maskResult.mask;
-    } catch {
-      return null;
-    }
-  }, [volumeResult, site, zoning, latitude, layers.shadowTimeShadow, shadowTime]);
+  const handleDistrictChange = useCallback((d: ZoningDistrict) => {
+    setSelectedDistrict(d); rebuildZoning({ dist: d });
+  }, [rebuildZoning]);
+  const handleCoverageChange = useCallback((v: string) => {
+    setCoverageOverride(v); rebuildZoning({ cov: v });
+  }, [rebuildZoning]);
+  const handleFarChange = useCallback((v: string) => {
+    setFarOverride(v); rebuildZoning({ far: v });
+  }, [rebuildZoning]);
+  const handleFireDistrictChange = useCallback((f: FireDistrict) => {
+    setFireDistrict(f); rebuildZoning({ fire: f });
+  }, [rebuildZoning]);
+  const handleHeightDistrictChange = useCallback((h: HeightDistrict['type']) => {
+    setHeightDistrictType(h); rebuildZoning({ hd: h });
+  }, [rebuildZoning]);
+  const handleCornerLotChange = useCallback((v: boolean) => {
+    setIsCornerLot(v); rebuildZoning({ corner: v });
+  }, [rebuildZoning]);
 
   const handleLoadDemo = useCallback(() => {
     setSite(DEMO_SITE);
     setRoads(DEMO_ROADS);
     setZoning(DEMO_ZONING);
+    setActiveStep(3);
   }, []);
 
-  const handleToggleLayer = useCallback((key: string) => {
-    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
+  const completedSteps = useMemo(() => ({
+    1: !!site && roads.length > 0,
+    2: !!zoning,
+    3: !!volumeResult,
+  }), [site, roads, zoning, volumeResult]);
 
-  const handleTabChange = useCallback((tab: MobileTab) => {
-    setActiveTab(tab);
-    // Close layer dropdown when switching tabs
-    setShowLayers(false);
-  }, []);
+  // Scene layers typed
+  const typedLayers = layers;
 
-  // Build the typed layers object for Scene
-  const typedLayers = {
-    road: layers.road ?? false,
-    adjacent: layers.adjacent ?? false,
-    north: layers.north ?? false,
-    absoluteHeight: layers.absoluteHeight ?? false,
-    shadow: layers.shadow ?? false,
-    floorPlates: layers.floorPlates ?? true,
-    reverseShadowContours: layers.reverseShadowContours ?? true,
-    reverseShadowHeightmap: layers.reverseShadowHeightmap ?? false,
-    shadowHeatmap: layers.shadowHeatmap ?? false,
-    shadowTimeShadow: layers.shadowTimeShadow ?? false,
-    shadowMeasurementLines: layers.shadowMeasurementLines ?? true,
-  };
-
-  // Check if bottom sheet should be visible (mobile only)
-  const isSheetOpen = activeTab !== '3d';
+  // Sidebar content by step
+  const sidebarContent = (
+    <>
+      {activeStep === 1 && (
+        <SiteSection
+          site={site}
+          onSiteChange={setSite}
+          onRoadsChange={setRoads}
+          onZoningChange={setZoning}
+          onLatitudeChange={setLatitude}
+          onLoadDemo={handleLoadDemo}
+          selectedDistrict={selectedDistrict}
+          onDistrictChange={handleDistrictChange}
+          coverageOverride={coverageOverride}
+          onCoverageChange={handleCoverageChange}
+          farOverride={farOverride}
+          onFarChange={handleFarChange}
+          fireDistrict={fireDistrict}
+          onFireDistrictChange={handleFireDistrictChange}
+          heightDistrictType={heightDistrictType}
+          isCornerLot={isCornerLot}
+          onCornerLotChange={handleCornerLotChange}
+          roadConfigs={roadConfigs}
+          onRoadConfigsChange={setRoadConfigs}
+        />
+      )}
+      {activeStep === 2 && (
+        <ZoningSection
+          selectedDistrict={selectedDistrict}
+          onDistrictChange={handleDistrictChange}
+          coverageOverride={coverageOverride}
+          onCoverageChange={handleCoverageChange}
+          farOverride={farOverride}
+          onFarChange={handleFarChange}
+          fireDistrict={fireDistrict}
+          onFireDistrictChange={handleFireDistrictChange}
+          heightDistrictType={heightDistrictType}
+          onHeightDistrictChange={handleHeightDistrictChange}
+          isCornerLot={isCornerLot}
+          onCornerLotChange={handleCornerLotChange}
+        />
+      )}
+      {activeStep === 3 && (
+        <ResultsSection
+          zoning={zoning}
+          result={volumeResult}
+          site={site}
+          roads={roads}
+          floorHeights={effectiveFloorHeights}
+          latitude={latitude}
+          onFloorHeightsChange={setFloorHeights}
+        />
+      )}
+    </>
+  );
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100 no-print">
+    <div className="flex min-h-screen flex-col no-print">
       {/* Header */}
-      <header className="flex items-center h-11 px-4 border-b border-gray-800 shrink-0">
-        <h1 className="text-base font-bold tracking-tight text-white">
-          VolumeCheck
-        </h1>
-        <span className="ml-1.5 rounded bg-blue-600/20 px-1.5 py-0.5 text-[10px] font-semibold text-blue-400 uppercase">
+      <header className="relative z-10 flex items-center justify-between px-4 py-3 md:px-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary via-primary/80 to-primary/60 text-[15px] font-bold text-primary-foreground shadow-[0_8px_24px_rgba(93,228,199,0.3)]">
+            V
+          </div>
+          <div>
+            <h1 className="text-base font-semibold text-foreground font-display">VolumeCheck</h1>
+            <p className="text-[10px] text-muted-foreground hidden sm:block">
+              住所から法規制と最大ボリュームを数分で。
+            </p>
+          </div>
+        </div>
+        <span className="rounded-full border border-border bg-card/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
           beta
         </span>
       </header>
 
-      {/* ============================================================ */}
-      {/* DESKTOP LAYOUT (md and above) */}
-      {/* ============================================================ */}
-      <div className="hidden md:flex flex-1 overflow-hidden">
-        {/* Left Sidebar */}
-        <aside className="w-72 shrink-0 border-r border-gray-800 overflow-y-auto">
-          <SiteInputPanel
-            onSiteChange={setSite}
-            onRoadsChange={setRoads}
-            onZoningChange={setZoning}
-            onLatitudeChange={setLatitude}
-            onLoadDemo={handleLoadDemo}
-            site={site}
-            isLoading={isLoading}
+      {/* ============ DESKTOP LAYOUT (md+) ============ */}
+      <div className="hidden md:flex flex-1 gap-3 px-4 pb-4 overflow-hidden">
+        <Sidebar
+          activeStep={activeStep}
+          onStepChange={setActiveStep}
+          completedSteps={completedSteps}
+          collapsed={sidebarCollapsed}
+          onCollapsedChange={setSidebarCollapsed}
+        >
+          {sidebarContent}
+        </Sidebar>
+
+        {/* 3D Scene */}
+        <main className="app-panel flex-1 relative overflow-hidden">
+          {calcError && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 rounded-full bg-destructive/90 border border-destructive px-4 py-2 text-xs text-destructive-foreground shadow-lg">
+              {calcError}
+            </div>
+          )}
+
+          <LayerPresetBar
+            preset={preset}
+            layers={layers}
+            onSelectPreset={selectPreset}
+            onToggleLayer={toggleLayer}
           />
-          <div className="border-t border-gray-800" />
-          <FloorEditor
-            maxFloors={volumeResult?.maxFloors ?? 0}
-            maxHeight={volumeResult?.maxHeight ?? 0}
-            floorHeights={effectiveFloorHeights}
-            onFloorHeightsChange={setFloorHeights}
-          />
-          <div className="border-t border-gray-800" />
-          <LayerControls layers={layers} onToggle={handleToggleLayer} />
+
           {/* Shadow time slider */}
           {layers.shadowTimeShadow && (
-            <div className="border-t border-gray-800 p-3">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                日影時刻
-              </h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 w-12">
+            <div className="absolute top-3 right-3 z-20 w-48 rounded-lg bg-card/90 backdrop-blur-sm border border-border p-3 shadow-lg">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] text-muted-foreground">日影時刻</span>
+                <span className="text-xs font-mono text-foreground">
                   {shadowTime.hour}:{String(shadowTime.minute).padStart(2, '0')}
                 </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={480}
-                  step={10}
-                  value={shadowTimeValue}
-                  onChange={(e) => setShadowTimeValue(Number(e.target.value))}
-                  className="flex-1 h-1.5 accent-blue-500"
-                />
               </div>
-              <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+              <Slider
+                value={[shadowTimeValue]}
+                onValueChange={([v]) => setShadowTimeValue(v)}
+                min={0}
+                max={480}
+                step={10}
+              />
+              <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
                 <span>8:00</span>
                 <span>12:00</span>
                 <span>16:00</span>
               </div>
             </div>
           )}
-        </aside>
 
-        {/* Center: 3D Scene */}
-        <main className="flex-1 relative">
-          {calcError && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 rounded-lg bg-red-900/90 border border-red-700 px-4 py-2 text-xs text-red-200 shadow-lg">
-              {calcError}
-            </div>
+          {/* Hero Metrics floating */}
+          {volumeResult && (
+            <HeroMetrics
+              result={volumeResult}
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10"
+            />
           )}
+
           <Scene
             site={site}
             roads={roads}
@@ -258,34 +290,11 @@ export default function ProjectPage() {
             shadowMask={shadowMask}
           />
         </main>
-
-        {/* Right Sidebar */}
-        <aside className="w-72 shrink-0 border-l border-gray-800 overflow-y-auto">
-          <RegulationPanel
-            zoning={zoning}
-            result={volumeResult}
-            site={site}
-            roads={roads}
-            floorHeights={effectiveFloorHeights}
-            latitude={latitude}
-          />
-        </aside>
       </div>
 
-      {/* Desktop: Bottom Bar AI Chat */}
-      <div className="hidden md:block shrink-0 border-t border-gray-800">
-        <AiChat
-          zoning={zoning}
-          result={volumeResult}
-          siteArea={site?.area ?? null}
-        />
-      </div>
-
-      {/* ============================================================ */}
-      {/* MOBILE LAYOUT (below md) */}
-      {/* ============================================================ */}
+      {/* ============ MOBILE LAYOUT (<md) ============ */}
       <div className="flex md:hidden flex-1 relative overflow-hidden">
-        {/* Full-screen 3D view as background */}
+        {/* Full-screen 3D */}
         <div className="absolute inset-0">
           <Scene
             site={site}
@@ -299,97 +308,37 @@ export default function ProjectPage() {
           />
         </div>
 
-        {/* Floating layer control button (top-right) */}
-        <button
-          onClick={() => setShowLayers((prev) => !prev)}
-          className="absolute top-3 right-3 z-30 rounded-lg bg-gray-900/80 backdrop-blur-sm border border-gray-700 px-3 py-2 text-xs text-gray-300 hover:bg-gray-800/90 transition-colors"
-        >
-          レイヤー
-        </button>
+        {/* Floating layer preset bar */}
+        <LayerPresetBar
+          preset={preset}
+          layers={layers}
+          onSelectPreset={selectPreset}
+          onToggleLayer={toggleLayer}
+        />
 
-        {/* Layer controls dropdown (mobile) */}
-        {showLayers && (
-          <div className="absolute top-12 right-3 z-30 rounded-lg bg-gray-900/95 backdrop-blur-sm border border-gray-700 shadow-xl">
-            <LayerControls layers={layers} onToggle={handleToggleLayer} />
-          </div>
+        {/* Floating hero metrics */}
+        {volumeResult && (
+          <HeroMetrics
+            result={volumeResult}
+            className="absolute top-14 left-1/2 -translate-x-1/2 z-10 scale-90"
+          />
         )}
 
-        {/* Bottom sheet */}
-        {isSheetOpen && (
-          <div className="absolute bottom-12 left-0 right-0 z-20 max-h-[60vh] overflow-y-auto bg-gray-950 border-t border-gray-800 rounded-t-xl pb-[env(safe-area-inset-bottom)]">
-            {/* Drag handle */}
-            <div className="flex justify-center pt-2 pb-1 sticky top-0 bg-gray-950 z-10">
-              <div className="w-10 h-1 rounded-full bg-gray-600" />
-            </div>
-
-            {/* Tab content */}
-            {activeTab === 'input' && (
-              <div>
-                <SiteInputPanel
-                  onSiteChange={setSite}
-                  onRoadsChange={setRoads}
-                  onZoningChange={setZoning}
-                  onLatitudeChange={setLatitude}
-                  onLoadDemo={handleLoadDemo}
-                  site={site}
-                  isLoading={isLoading}
-                />
-                <div className="border-t border-gray-800" />
-                <FloorEditor
-                  maxFloors={volumeResult?.maxFloors ?? 0}
-                  maxHeight={volumeResult?.maxHeight ?? 0}
-                  floorHeights={effectiveFloorHeights}
-                  onFloorHeightsChange={setFloorHeights}
-                />
-              </div>
-            )}
-
-            {activeTab === 'result' && (
-              <RegulationPanel
-                zoning={zoning}
-                result={volumeResult}
-                site={site}
-                roads={roads}
-                floorHeights={effectiveFloorHeights}
-                latitude={latitude}
-              />
-            )}
-
-            {activeTab === 'ai' && (
-              <div className="p-3">
-                <AiChat
-                  zoning={zoning}
-                  result={volumeResult}
-                  siteArea={site?.area ?? null}
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Bottom tab bar */}
-        <div className="absolute bottom-0 left-0 right-0 z-30 flex h-12 bg-gray-900 border-t border-gray-700">
-          {TAB_DEFS.map(({ key, label }) => {
-            const isActive = activeTab === key;
-            return (
-              <button
-                key={key}
-                onClick={() => handleTabChange(key)}
-                className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-                  isActive
-                    ? 'text-blue-400 border-b-2 border-blue-400'
-                    : 'text-gray-500 hover:text-gray-400'
-                }`}
-              >
-                <span className="text-[10px] leading-none font-medium">{label}</span>
-              </button>
-            );
-          })}
-        </div>
+        {/* Bottom Sheet */}
+        <BottomSheet>
+          <MobileStepper activeStep={activeStep} onStepChange={setActiveStep} />
+          {sidebarContent}
+        </BottomSheet>
       </div>
 
-      {/* Print-only report */}
-      <PrintReport zoning={zoning} result={volumeResult} siteArea={site?.area ?? null} floorHeights={effectiveFloorHeights} latitude={latitude} />
+      {/* Print report (hidden) */}
+      <PrintReport
+        zoning={zoning}
+        result={volumeResult}
+        siteArea={site?.area ?? null}
+        floorHeights={effectiveFloorHeights}
+        latitude={latitude}
+      />
     </div>
   );
 }

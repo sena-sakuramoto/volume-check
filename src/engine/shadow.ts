@@ -1,5 +1,6 @@
 import type { Point2D, ShadowRegulation } from './types';
 import { distanceToSegment, isInsidePolygon } from './geometry';
+import { MAX_HEIGHT_CAP } from './constants';
 
 // ---------------------------------------------------------------------------
 // 5a: Solar position calculation (simplified SPA)
@@ -198,7 +199,7 @@ export function calculateShadowConstrainedHeight(
 
   // Binary search for max height
   let lo = effectiveHeight;
-  let hi = 100;
+  let hi = MAX_HEIGHT_CAP;
 
   for (let iter = 0; iter < 40; iter++) {
     const mid = (lo + hi) / 2;

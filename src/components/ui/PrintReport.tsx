@@ -1,6 +1,7 @@
 'use client';
 
 import type { ZoningData, VolumeResult } from '@/engine/types';
+import { MAX_HEIGHT_CAP } from '@/engine/constants';
 
 interface PrintReportProps {
   zoning: ZoningData | null;
@@ -130,8 +131,12 @@ export function PrintReport({ zoning, result, siteArea, floorHeights, latitude }
           <tr>
             <td style={td}>最大高さ</td>
             <td style={tdBold}>
-              {result.maxHeight < 0 ? '制限なし' : `${result.maxHeight.toFixed(2)}m`}
+              {Number.isFinite(result.maxHeight) ? `${result.maxHeight.toFixed(2)}m` : '制限なし'}
             </td>
+          </tr>
+          <tr>
+            <td style={td}>計算上限</td>
+            <td style={tdVal}>{MAX_HEIGHT_CAP.toFixed(0)}m</td>
           </tr>
           <tr>
             <td style={td}>最大階数</td>

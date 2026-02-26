@@ -1,5 +1,6 @@
 import type { Point2D, ShadowRegulation, HeightFieldData, ShadowGridData, ShadowProjectionResult } from './types';
 import { solarPosition, solarAzimuthToCompass } from './shadow';
+import { MAX_HEIGHT_CAP } from './constants';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -18,7 +19,7 @@ const SHADOW_GRID_PADDING = 15; // extend grid 15m beyond site boundary
  * Traces a ray from the receptor TOWARD the sun. If the ray intersects
  * the building volume (height field), the receptor is in shadow.
  */
-function isReceptorInShadow(
+export function isReceptorInShadow(
   rx: number,
   ry: number,
   measurementHeight: number,
@@ -58,7 +59,7 @@ function isReceptorInShadow(
     const rayH = measurementHeight + d * tanAlt;
 
     if (buildingH > rayH) return true;
-    if (rayH > 100) break; // ray is above any possible building
+    if (rayH > MAX_HEIGHT_CAP) break; // ray is above any possible building
   }
 
   return false;

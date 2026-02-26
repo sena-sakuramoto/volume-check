@@ -18,6 +18,7 @@ export {
 } from './zoning';
 export { validateVolumeInput, isSimplePolygon } from './validation';
 export { solarPosition, shadowTip, calculateShadowConstrainedHeight, solarAzimuthToCompass } from './shadow';
-export { generateShadowProjection, getShadowMaskAtTime } from './shadow-projection';
+export { generateShadowProjection, getShadowMaskAtTime, isReceptorInShadow } from './shadow-projection';
 export { generateReverseShadow } from './reverse-shadow';
+export { generateBuildingPatterns, evaluateShadowCompliance, findMaxHeightForPattern } from './building-pattern';
 export type * from './types';

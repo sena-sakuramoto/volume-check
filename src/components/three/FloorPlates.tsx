@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { Html } from '@react-three/drei';
 import type { SiteBoundary, ZoningData } from '@/engine/types';
+import { applyWallSetback } from '@/engine/wall-setback';
 
 interface FloorPlatesProps {
   site: SiteBoundary;
@@ -32,21 +33,7 @@ export function FloorPlates({
     const n = verts.length;
     if (n < 3) return verts;
     if (wallSetback <= 0) return verts;
-
-    // Compute centroid
-    let cx = 0, cy = 0;
-    for (const v of verts) { cx += v.x; cy += v.y; }
-    cx /= n; cy /= n;
-
-    // Shrink each vertex toward centroid by wallSetback
-    return verts.map((v) => {
-      const dx = v.x - cx;
-      const dy = v.y - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist <= wallSetback) return { x: cx, y: cy };
-      const scale = (dist - wallSetback) / dist;
-      return { x: cx + dx * scale, y: cy + dy * scale };
-    });
+    return applyWallSetback(verts, wallSetback);
   }, [site.vertices, wallSetback]);
 
   // Build floor elevations from floorHeights array

@@ -1,6 +1,5 @@
 import type { Point2D } from './types';
-import { segmentsIntersectionPoint, polygonArea } from './geometry';
-import { isSimplePolygon } from './validation';
+import { segmentsIntersectionPoint, polygonArea, isSimplePolygon } from './geometry';
 
 /**
  * Inset a polygon by a given distance for wall setback (外壁後退).

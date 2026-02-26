@@ -147,23 +147,45 @@ export async function POST(req: NextRequest) {
 
     const genai = new GoogleGenAI({ apiKey });
 
-    const response = await genai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: [
-        {
-          role: 'user',
-          parts: [
+    // Try models in order of preference, falling back if unavailable
+    const MODELS = [
+      'gemini-3.1-pro-preview',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+    ];
+
+    let response;
+    let lastError: unknown;
+    for (const model of MODELS) {
+      try {
+        response = await genai.models.generateContent({
+          model,
+          contents: [
             {
-              inlineData: {
-                mimeType: file.type,
-                data: base64,
-              },
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: file.type,
+                    data: base64,
+                  },
+                },
+                { text: EXTRACTION_PROMPT },
+              ],
             },
-            { text: EXTRACTION_PROMPT },
           ],
-        },
-      ],
-    });
+        });
+        break; // success
+      } catch (e) {
+        lastError = e;
+        console.warn(`Model ${model} failed, trying next...`, e instanceof Error ? e.message : e);
+        continue;
+      }
+    }
+
+    if (!response) {
+      throw lastError ?? new Error('All models failed');
+    }
 
     const text = response.text || '';
 

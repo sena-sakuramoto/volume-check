@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { polygonArea } from './geometry';
-import type { Point2D, VolumeInput } from './types';
+import { polygonArea, isSimplePolygon } from './geometry';
+import type { VolumeInput } from './types';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -75,51 +75,7 @@ export const VolumeInputSchema = z.object({
 // Geometric validation helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Check if two line segments (a1-a2) and (b1-b2) intersect properly
- * (crossing, not just touching at endpoints).
- */
-function segmentsCross(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): boolean {
-  const d1 = cross(a1, a2, b1);
-  const d2 = cross(a1, a2, b2);
-  const d3 = cross(b1, b2, a1);
-  const d4 = cross(b1, b2, a2);
-
-  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
-    return true;
-  }
-  return false;
-}
-
-/** Cross product of vectors (b-a) and (c-a) */
-function cross(a: Point2D, b: Point2D, c: Point2D): number {
-  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-}
-
-/**
- * Check if a polygon is simple (no self-intersections).
- * O(n²) segment-vs-segment test, skipping adjacent edges.
- */
-export function isSimplePolygon(vertices: Point2D[]): boolean {
-  const n = vertices.length;
-  if (n < 3) return false;
-
-  for (let i = 0; i < n; i++) {
-    const a1 = vertices[i];
-    const a2 = vertices[(i + 1) % n];
-    for (let j = i + 2; j < n; j++) {
-      // Skip adjacent edges (they share a vertex)
-      if (i === 0 && j === n - 1) continue;
-      const b1 = vertices[j];
-      const b2 = vertices[(j + 1) % n];
-      if (segmentsCross(a1, a2, b1, b2)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
+export { isSimplePolygon };
 
 // ---------------------------------------------------------------------------
 // Integrated validation

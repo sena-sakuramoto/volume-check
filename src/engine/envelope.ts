@@ -22,7 +22,9 @@ import { validateVolumeInput } from './validation';
 import { calculateShadowConstrainedHeight } from './shadow';
 import { generateShadowProjection } from './shadow-projection';
 import { generateReverseShadow } from './reverse-shadow';
-import type { HeightFieldData, ShadowProjectionResult, ReverseShadowResult } from './types';
+import { generateBuildingPatterns } from './building-pattern';
+import type { HeightFieldData, ShadowProjectionResult, ReverseShadowResult, BuildingPatternResult } from './types';
+import { MAX_HEIGHT_CAP } from './constants';
 
 /** Grid resolution in meters for sampling height field */
 const GRID_RESOLUTION = 0.5;
@@ -247,6 +249,7 @@ function buildHeightField(
   adjacentEdges: SiteEdge[],
   northEdges: SiteEdge[],
   northRotation: number,
+  includeShadow: boolean = true,
 ): HeightField {
   const { zoning } = input;
 
@@ -254,7 +257,7 @@ function buildHeightField(
   const roadParams = getRoadSetbackParams(zoning.district);
   const adjParams = getAdjacentSetbackParams(zoning.district);
   const northParams = getNorthSetbackParams(zoning.district);
-  const absLimit = getAbsoluteHeightLimit(zoning.absoluteHeightLimit);
+  const absLimit = Math.min(getAbsoluteHeightLimit(zoning.absoluteHeightLimit), MAX_HEIGHT_CAP);
 
   // Bounding box of buildable polygon
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -352,7 +355,7 @@ function buildHeightField(
       }
 
       // Shadow regulation (日影規制) - only if applicable
-      if (input.zoning.shadowRegulation !== null) {
+      if (includeShadow && input.zoning.shadowRegulation !== null) {
         const shadowH = calculateShadowConstrainedHeight(
           point,
           input.site.vertices,
@@ -678,7 +681,22 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     adjacentOnlyEdges,
     northEdges,
     northRotation,
+    true,
   );
+
+  // Optional: a non-shadow envelope field for building pattern caps
+  let nonShadowField: HeightField | null = null;
+  if (zoning.shadowRegulation !== null) {
+    nonShadowField = buildHeightField(
+      buildablePolygon,
+      input,
+      roads,
+      adjacentOnlyEdges,
+      northEdges,
+      northRotation,
+      false,
+    );
+  }
 
   // 5. Determine max height and max floors from the height field
   let maxHeight = 0;
@@ -688,7 +706,7 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     }
   }
   // Apply absolute height limit cap
-  const absLimit = getAbsoluteHeightLimit(zoning.absoluteHeightLimit);
+  const absLimit = Math.min(getAbsoluteHeightLimit(zoning.absoluteHeightLimit), MAX_HEIGHT_CAP);
   if (maxHeight > absLimit) maxHeight = absLimit;
 
   // Calculate maxFloors from user-provided floor heights or default
@@ -850,6 +868,27 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     );
   }
 
+  // Building pattern comparison (建物パターン別日影シミュレーション)
+  let buildingPatterns: BuildingPatternResult | null = null;
+  if (zoning.shadowRegulation !== null) {
+    const sourceField = nonShadowField ?? combinedField;
+    const envelopeHF: HeightFieldData = {
+      cols: sourceField.cols,
+      rows: sourceField.rows,
+      originX: sourceField.originX,
+      originY: sourceField.originY,
+      resolution: GRID_RESOLUTION,
+      heights: sourceField.heights,
+      insideMask: sourceField.insideMask,
+    };
+    buildingPatterns = generateBuildingPatterns(
+      input,
+      buildablePolygon,
+      northRotation,
+      envelopeHF,
+    );
+  }
+
   return {
     maxFloorArea,
     maxCoverageArea,
@@ -866,6 +905,7 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     },
     shadowProjection,
     reverseShadow,
+    buildingPatterns,
     heightFieldData: zoning.shadowRegulation !== null ? {
       cols: combinedField.cols,
       rows: combinedField.rows,

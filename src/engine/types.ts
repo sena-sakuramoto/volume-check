@@ -154,6 +154,8 @@ export interface VolumeResult {
   heightFieldData: HeightFieldData | null;
   /** Reverse shadow analysis (逆日影) - height contours from shadow regulation */
   reverseShadow: ReverseShadowResult | null;
+  /** Building pattern comparison (建物パターン比較) */
+  buildingPatterns: BuildingPatternResult | null;
 }
 
 /** Design proposal for compliance checking */
@@ -243,6 +245,34 @@ export interface ContourLine {
   height: number;
   /** Segments forming the contour: pairs of [start, end] */
   segments: { start: Point2D; end: Point2D }[];
+}
+
+// ---------------------------------------------------------------------------
+// Building pattern types (建物パターン別日影シミュレーション)
+// ---------------------------------------------------------------------------
+
+/** Result for a single building pattern */
+export interface PatternResult {
+  name: string;            // '低層パターン' | '中高層パターン'
+  footprint: Point2D[];    // 建物フットプリント
+  maxHeight: number;       // 合成影で規制を満たす最大高さ
+  maxFloors: number;
+  footprintArea: number;   // 建築面積
+  totalFloorArea: number;  // 延べ面積
+  /** Additional inset (meters) applied to the buildable polygon */
+  inset?: number;
+  compliance: {
+    passes: boolean;
+    worstHoursAt5m: number;
+    worstHoursAt10m: number;
+  };
+}
+
+/** Combined result for low-rise and mid-high-rise patterns */
+export interface BuildingPatternResult {
+  lowRise: PatternResult;
+  midHighRise: PatternResult;
+  optimal: PatternResult;
 }
 
 /** Reverse shadow (逆日影) analysis result */
