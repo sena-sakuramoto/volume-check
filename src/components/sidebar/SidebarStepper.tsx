@@ -1,7 +1,9 @@
 'use client';
 
+import type { ComponentType } from 'react';
 import { cn } from '@/lib/cn';
-import { MapPin, Scale, BarChart3 } from 'lucide-react';
+import { MapPin, Scale } from 'lucide-react';
+import { ChartBar } from '@phosphor-icons/react';
 
 export type Step = 1 | 2 | 3;
 
@@ -12,10 +14,12 @@ interface SidebarStepperProps {
   completedSteps: { 1: boolean; 2: boolean; 3: boolean };
 }
 
-const STEPS: { step: Step; label: string; Icon: typeof MapPin }[] = [
+type StepIcon = ComponentType<{ className?: string }>;
+
+const STEPS: { step: Step; label: string; Icon: StepIcon }[] = [
   { step: 1, label: '敷地', Icon: MapPin },
   { step: 2, label: '法規', Icon: Scale },
-  { step: 3, label: '結果', Icon: BarChart3 },
+  { step: 3, label: '結果', Icon: ChartBar },
 ];
 
 export function SidebarStepper({ activeStep, onStepChange, completedSteps }: SidebarStepperProps) {

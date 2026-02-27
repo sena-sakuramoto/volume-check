@@ -2,7 +2,8 @@
 
 import { useState, useCallback, useRef, type ChangeEvent, type DragEvent } from 'react';
 import type { ZoningDistrict, FireDistrict } from '@/engine/types';
-import { Upload, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { UploadSimple } from '@phosphor-icons/react';
 import { parseSiteFile } from '@/lib/site-file-parser';
 import type { UploadStatus, AnalyzeSiteResponse, RoadDirection, SiteCallbacks } from './site-types';
 import { ROAD_WIDTH_PRESETS } from './site-types';
@@ -212,7 +213,7 @@ export function FileUpload({
           </div>
         ) : (
           <>
-            <Upload className="h-5 w-5 text-muted-foreground" />
+            <UploadSimple className="h-5 w-5 text-muted-foreground" weight="duotone" />
             <span className="text-[11px] text-muted-foreground">測量図・座標データをドロップ</span>
             <span className="text-[10px] text-muted-foreground/60">JPEG, PNG, PDF, CSV, GeoJSON, SIMA</span>
           </>

@@ -1,12 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
+import { Button } from '@/components/ui/shadcn/button';
+import { Input } from '@/components/ui/shadcn/input';
+import { cn } from '@/lib/cn';
 import type { ZoningData, VolumeResult } from '@/engine/types';
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
 
 interface AiChatProps {
   zoning: ZoningData | null;
@@ -71,39 +69,27 @@ function tryLocalAnswer(
 
 export function AiChat({ zoning, result, siteArea }: AiChatProps) {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [currentAnswer, setCurrentAnswer] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const askQuestion = async (question: string) => {
+    const normalized = question.trim();
+    if (!normalized || isLoading) return;
 
-  const handleSubmit = async () => {
-    if (!input.trim() || isLoading) return;
-
-    const userMessage = input.trim();
-    setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
-    setIsOpen(true);
-
-    // Try local answer first (no API needed)
-    const localAnswer = tryLocalAnswer(userMessage, zoning, result, siteArea);
+    const localAnswer = tryLocalAnswer(normalized, zoning, result, siteArea);
     if (localAnswer) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: localAnswer }]);
+      setCurrentAnswer(localAnswer);
       setIsLoading(false);
       return;
     }
 
-    // Try Gemini API
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: userMessage,
+          message: normalized,
           context: {
             zoning: zoning
               ? {
@@ -129,135 +115,109 @@ export function AiChat({ zoning, result, siteArea }: AiChatProps) {
       });
 
       const data = await res.json();
-      const reply = data.reply || data.error;
-      setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+      const reply = data.reply || data.error || '回答を生成できませんでした。';
+      setCurrentAnswer(reply);
     } catch {
-      // Fallback: provide basic info
       const fallback = zoning
         ? `AI接続エラー。現在の計算結果: 最大高さ${result?.maxHeight ?? '?'}m、最大${result?.maxFloors ?? '?'}階、延べ面積${result?.maxFloorArea?.toFixed(1) ?? '?'}m²`
         : '接続エラー。まず敷地データを入力してから質問してください。';
-      setMessages((prev) => [...prev, { role: 'assistant', content: fallback }]);
+      setCurrentAnswer(fallback);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const handleSubmit = async () => {
+    if (!input.trim() || isLoading) return;
+    const userMessage = input.trim();
+    setInput('');
+    await askQuestion(userMessage);
   };
 
-  // Quick-action buttons
-  const quickActions = [
-    '何階建て可能？',
-    '斜線制限は？',
-    '結果まとめ',
-  ];
+  const handleQuickAction = (action: string) => {
+    void askQuestion(action);
+  };
+
+  const handleCopy = () => {
+    if (!currentAnswer) return;
+    void navigator.clipboard.writeText(currentAnswer);
+  };
+
+  const quickActions = ['何階建て可能？', '斜線制限は？', '結果まとめ'];
 
   return (
-    <div className="relative">
-      {/* Chat history panel - slides up */}
-      {isOpen && messages.length > 0 && (
-        <div className="absolute bottom-full left-0 right-0 bg-gray-900 border border-b-0 border-gray-700 rounded-t-lg shadow-2xl max-h-80 overflow-y-auto">
-          <div className="flex justify-between items-center px-4 py-2 border-b border-gray-700">
-            <span className="text-xs font-bold text-gray-400">AI アシスタント</span>
+    <div className="rounded-lg bg-card/95 backdrop-blur-sm border border-border p-2.5 space-y-2">
+      <div className="flex flex-wrap gap-1">
+        {quickActions.map((action) => (
+          <button
+            key={action}
+            onClick={() => handleQuickAction(action)}
+            disabled={isLoading}
+            className={cn(
+              'rounded-full border border-border px-2.5 py-1 text-[10px] text-muted-foreground hover:border-primary/60 hover:text-primary transition-colors whitespace-nowrap',
+              isLoading && 'opacity-60 pointer-events-none',
+            )}
+          >
+            {action}
+          </button>
+        ))}
+      </div>
+
+      {isLoading && (
+        <div className="text-xs text-muted-foreground animate-pulse px-1">考え中...</div>
+      )}
+
+      {currentAnswer && (
+        <div className="rounded-lg bg-card border border-border px-3 py-2.5 space-y-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold text-primary">AI</span>
+            <span className="text-[10px] text-muted-foreground">回答</span>
+          </div>
+          <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">
+            {currentAnswer}
+          </p>
+          <div className="flex gap-1">
             <button
-              onClick={() => setIsOpen(false)}
-              className="text-gray-500 hover:text-gray-300 text-sm"
+              onClick={handleCopy}
+              className="text-[10px] text-muted-foreground hover:text-foreground px-2 py-0.5 rounded border border-border transition-colors"
+            >
+              コピー
+            </button>
+            <button
+              onClick={() => setCurrentAnswer(null)}
+              className="text-[10px] text-muted-foreground hover:text-foreground px-2 py-0.5 rounded border border-border transition-colors"
             >
               閉じる
             </button>
           </div>
-          <div className="p-3 space-y-3">
-            {messages.map((msg, i) => (
-              <div key={i} className={msg.role === 'user' ? 'text-right' : ''}>
-                <div
-                  className={`inline-block max-w-[85%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap ${
-                    msg.role === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-800 text-gray-200 border border-gray-700'
-                  }`}
-                >
-                  {msg.content}
-                </div>
-                {msg.role === 'assistant' && (
-                  <div className="flex gap-1 mt-1">
-                    <button
-                      onClick={() => handleCopy(msg.content)}
-                      className="text-[10px] text-gray-500 hover:text-gray-300 px-2 py-0.5 rounded border border-gray-700"
-                    >
-                      コピー
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-            {isLoading && (
-              <div className="text-sm text-gray-500 animate-pulse">考え中...</div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
         </div>
       )}
 
-      {/* Input bar */}
-      <div className="flex items-center gap-2 px-4 py-2 bg-gray-900">
-        <span className="text-gray-500 text-xs font-bold flex-shrink-0">AI</span>
-
-        {/* Quick actions */}
-        {messages.length === 0 && (
-          <div className="flex gap-1">
-            {quickActions.map((action) => (
-              <button
-                key={action}
-                onClick={() => {
-                  setInput(action);
-                  // Trigger submit immediately
-                  const msg = action;
-                  setInput('');
-                  setMessages((prev) => [...prev, { role: 'user', content: msg }]);
-                  setIsLoading(true);
-                  setIsOpen(true);
-                  const local = tryLocalAnswer(msg, zoning, result, siteArea);
-                  if (local) {
-                    setMessages((prev) => [...prev, { role: 'assistant', content: local }]);
-                    setIsLoading(false);
-                  } else {
-                    // Fallback
-                    setMessages((prev) => [
-                      ...prev,
-                      {
-                        role: 'assistant',
-                        content: 'まず敷地データを入力してください。',
-                      },
-                    ]);
-                    setIsLoading(false);
-                  }
-                }}
-                className="rounded-full border border-gray-700 px-2.5 py-1 text-[10px] text-gray-400 hover:border-blue-500 hover:text-blue-400 transition-colors whitespace-nowrap"
-              >
-                {action}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          placeholder="この敷地で3階建ては可能？"
-          className="flex-1 px-3 py-1.5 text-sm bg-gray-800 border border-gray-700 text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-500"
-          disabled={isLoading}
-        />
-        <button
-          onClick={handleSubmit}
-          disabled={isLoading || !input.trim()}
-          className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex-shrink-0"
-        >
-          送信
-        </button>
-      </div>
+      <details className="group">
+        <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors py-1">
+          自由に質問する
+        </summary>
+        <div className="flex items-center gap-1.5 mt-1.5">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleSubmit();
+            }}
+            placeholder="この敷地で3階建ては可能？"
+            disabled={isLoading}
+            className="flex-1 h-8 text-sm"
+          />
+          <Button
+            onClick={() => void handleSubmit()}
+            disabled={isLoading || !input.trim()}
+            size="sm"
+            className="shrink-0"
+          >
+            送信
+          </Button>
+        </div>
+      </details>
     </div>
   );
 }

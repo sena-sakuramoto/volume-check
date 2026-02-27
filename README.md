@@ -12,7 +12,7 @@
 - レイヤー表示切替（道路斜線/隣地斜線/北側斜線/絶対高さ）
 - プロジェクトの保存・読み込み（JSON形式）
 - PDF出力（ブラウザ印刷機能）
-- AIアシスタント（建築基準法の質問対応、Gemini API）
+- AIアシスタント（Quick Action + インライン回答カード、Gemini API）
 - デスクトップ・モバイル対応レスポンシブUI
 
 ## セットアップ
@@ -45,7 +45,9 @@ pnpm lint
 ## 技術スタック
 
 - **フレームワーク:** Next.js 16 (App Router)
-- **UI:** React 19, Tailwind CSS 4
+- **UI:** React 19, Tailwind CSS 4, shadcn/ui (Radix UI)
+- **アイコン:** Lucide + Phosphor Icons（混在使用）
+- **フォント:** Space Grotesk (Display) + Noto Sans JP (Body) + JetBrains Mono (Mono)
 - **3D描画:** Three.js, @react-three/fiber, @react-three/drei
 - **CSG演算:** three-bvh-csg, three-mesh-bvh
 - **AI:** Google Gemini API (@google/genai)

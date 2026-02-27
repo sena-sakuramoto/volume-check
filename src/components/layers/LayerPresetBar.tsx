@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import type { LayerPreset, LayerState } from '@/hooks/useLayerPresets';
-import { Box, Sun, LayoutGrid, Settings2, ChevronDown } from 'lucide-react';
+import { LayoutGrid, Settings2 } from 'lucide-react';
+import { Cube, SunDim } from '@phosphor-icons/react';
 import { cn } from '@/lib/cn';
 import { PRESET_DEFS, LAYER_GROUPS } from './layer-presets';
 
-const ICON_MAP = { Box, Sun, LayoutGrid, Settings2 } as const;
+const ICON_MAP = { Box: Cube, Sun: SunDim, LayoutGrid, Settings2 } as const;
 
 interface LayerPresetBarProps {
   preset: LayerPreset;

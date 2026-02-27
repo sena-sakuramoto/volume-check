@@ -275,7 +275,7 @@ export function generatePdfReport(
 
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
-    alert('ポップアップがブロックされました。ブラウザの設定を確認してください。');
+    console.warn('ポップアップがブロックされました。ブラウザの設定を確認してください。');
     return;
   }
 
