@@ -8,6 +8,7 @@ import { PatternComparison } from '@/components/results/PatternComparison';
 import { FloorTable } from '@/components/results/FloorTable';
 import { ActionToolbar } from '@/components/results/ActionToolbar';
 import { FloorEditor } from '@/components/ui/FloorEditor';
+import { AiChat } from '@/components/chat/AiChat';
 
 function DataRow({ label, value }: { label: string; value: string }) {
   return (
@@ -153,6 +154,11 @@ export function ResultsSection({
             <div>建物パターンは日影規制を満たす最大高さを探索</div>
           </div>
         </div>
+      )}
+
+      {/* AI Quick Actions */}
+      {result && (
+        <AiChat zoning={zoning} result={result} siteArea={site?.area ?? null} />
       )}
 
       {/* Actions */}
