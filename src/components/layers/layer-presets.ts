@@ -1,4 +1,4 @@
-import type { LayerPreset } from '@/hooks/useLayerPresets';
+import type { LayerPreset } from '@/stores/useViewerStore';
 
 export interface PresetDef {
   key: LayerPreset;

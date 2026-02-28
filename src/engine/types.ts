@@ -156,6 +156,8 @@ export interface VolumeResult {
   reverseShadow: ReverseShadowResult | null;
   /** Building pattern comparison (建物パターン比較) */
   buildingPatterns: BuildingPatternResult | null;
+  /** Buildable polygon after wall setback (外壁後退後の建築可能エリア) */
+  buildablePolygon: Point2D[] | null;
 }
 
 /** Design proposal for compliance checking */

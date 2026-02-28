@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import type { SiteBoundary, Road, ZoningData, ZoningDistrict, FireDistrict, HeightDistrict } from '@/engine/types';
 import { useVolumeCalculation } from '@/hooks/useVolumeCalculation';
 import { useShadow } from '@/hooks/useShadow';
 import { useAutoSave, loadProject } from '@/hooks/useAutoSave';
-import { useLayerPresets, type LayerState } from '@/hooks/useLayerPresets';
+import { useViewerStore } from '@/stores/useViewerStore';
 import { DEMO_SITE, DEMO_ROADS, DEMO_ZONING } from '@/lib/demo-data';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import type { Step } from '@/components/sidebar/SidebarStepper';
@@ -22,8 +22,8 @@ import { Slider } from '@/components/ui/shadcn/slider';
 import type { RoadConfig } from '@/components/site/site-types';
 import { buildZoningData } from '@/components/site/site-helpers';
 
-const Scene = dynamic(
-  () => import('@/components/three/Scene').then((m) => ({ default: m.Scene })),
+const Viewer = dynamic(
+  () => import('@/components/three/Viewer').then((m) => ({ default: m.Viewer })),
   {
     ssr: false,
     loading: () => (
@@ -34,14 +34,21 @@ const Scene = dynamic(
   },
 );
 
+function getInitialSavedProject() {
+  if (typeof window === 'undefined') return null;
+  return loadProject();
+}
+
 export default function ProjectPage() {
+  const initialSavedProject = useMemo(() => getInitialSavedProject(), []);
+
   // Core state
-  const [site, setSite] = useState<SiteBoundary | null>(null);
-  const [roads, setRoads] = useState<Road[]>([]);
-  const [zoning, setZoning] = useState<ZoningData | null>(null);
-  const [latitude, setLatitude] = useState(35.68);
-  const [floorHeights, setFloorHeights] = useState<number[]>([]);
-  const [shadowTimeValue, setShadowTimeValue] = useState(120);
+  const [site, setSite] = useState<SiteBoundary | null>(() => initialSavedProject?.site ?? null);
+  const [roads, setRoads] = useState<Road[]>(() => initialSavedProject?.roads ?? []);
+  const [zoning, setZoning] = useState<ZoningData | null>(() => initialSavedProject?.zoning ?? null);
+  const [latitude, setLatitude] = useState(() => initialSavedProject?.latitude ?? 35.68);
+  const [floorHeights, setFloorHeights] = useState<number[]>(() => initialSavedProject?.floorHeights ?? []);
+  const { layers, shadowTimeValue, setShadowTime: setShadowTimeValue } = useViewerStore();
 
   // UI state
   const [activeStep, setActiveStep] = useState<Step>(1);
@@ -59,7 +66,6 @@ export default function ProjectPage() {
   ]);
 
   // Hooks
-  const { preset, layers, selectPreset, toggleLayer } = useLayerPresets();
   const { volumeResult, calcError, effectiveFloorHeights } = useVolumeCalculation({
     site, zoning, roads, latitude, floorHeights,
   });
@@ -73,23 +79,11 @@ export default function ProjectPage() {
   });
   useAutoSave({ site, roads, zoning, latitude, floorHeights });
 
-  // Load saved project on mount
-  useEffect(() => {
-    const saved = loadProject();
-    if (saved) {
-      setSite(saved.site);
-      setRoads(saved.roads);
-      setZoning(saved.zoning);
-      setLatitude(saved.latitude);
-      if (saved.floorHeights.length > 0) setFloorHeights(saved.floorHeights);
-    }
-  }, []);
-
-  // Auto-advance steps
-  useEffect(() => {
-    if (site && roads.length > 0 && !zoning) setActiveStep(2);
-    if (zoning && volumeResult) setActiveStep(3);
-  }, [site, roads, zoning, volumeResult]);
+  const resolvedActiveStep = useMemo<Step>(() => {
+    if (activeStep < 2 && site && roads.length > 0) return 2;
+    if (activeStep < 3 && zoning && volumeResult) return 3;
+    return activeStep;
+  }, [activeStep, site, roads, zoning, volumeResult]);
 
   // Consolidated zoning rebuild helper
   const rebuildZoning = useCallback((overrides: {
@@ -141,13 +135,10 @@ export default function ProjectPage() {
     3: !!volumeResult,
   }), [site, roads, zoning, volumeResult]);
 
-  // Scene layers typed
-  const typedLayers = layers;
-
   // Sidebar content by step
   const sidebarContent = (
     <>
-      {activeStep === 1 && (
+      {resolvedActiveStep === 1 && (
         <SiteSection
           site={site}
           onSiteChange={setSite}
@@ -170,7 +161,7 @@ export default function ProjectPage() {
           onRoadConfigsChange={setRoadConfigs}
         />
       )}
-      {activeStep === 2 && (
+      {resolvedActiveStep === 2 && (
         <ZoningSection
           selectedDistrict={selectedDistrict}
           onDistrictChange={handleDistrictChange}
@@ -186,7 +177,7 @@ export default function ProjectPage() {
           onCornerLotChange={handleCornerLotChange}
         />
       )}
-      {activeStep === 3 && (
+      {resolvedActiveStep === 3 && (
         <ResultsSection
           zoning={zoning}
           result={volumeResult}
@@ -201,7 +192,7 @@ export default function ProjectPage() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col no-print">
+    <div className="flex h-screen flex-col overflow-hidden no-print">
       {/* Header */}
       <header className="relative z-10 flex items-center justify-between px-4 py-3 md:px-6">
         <div className="flex items-center gap-3">
@@ -223,7 +214,7 @@ export default function ProjectPage() {
       {/* ============ DESKTOP LAYOUT (md+) ============ */}
       <div className="hidden md:flex flex-1 gap-3 px-4 pb-4 overflow-hidden">
         <Sidebar
-          activeStep={activeStep}
+          activeStep={resolvedActiveStep}
           onStepChange={setActiveStep}
           completedSteps={completedSteps}
           collapsed={sidebarCollapsed}
@@ -240,12 +231,7 @@ export default function ProjectPage() {
             </div>
           )}
 
-          <LayerPresetBar
-            preset={preset}
-            layers={layers}
-            onSelectPreset={selectPreset}
-            onToggleLayer={toggleLayer}
-          />
+          <LayerPresetBar />
 
           {/* Shadow time slider */}
           {layers.shadowTimeShadow && (
@@ -263,7 +249,7 @@ export default function ProjectPage() {
                 max={480}
                 step={10}
               />
-              <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+              <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
                 <span>8:00</span>
                 <span>12:00</span>
                 <span>16:00</span>
@@ -279,13 +265,12 @@ export default function ProjectPage() {
             />
           )}
 
-          <Scene
+          <Viewer
             site={site}
             roads={roads}
             zoning={zoning}
             volumeResult={volumeResult}
             floorHeights={effectiveFloorHeights}
-            layers={typedLayers}
             shadowTime={layers.shadowTimeShadow ? shadowTime : null}
             shadowMask={shadowMask}
           />
@@ -296,25 +281,25 @@ export default function ProjectPage() {
       <div className="flex md:hidden flex-1 relative overflow-hidden">
         {/* Full-screen 3D */}
         <div className="absolute inset-0">
-          <Scene
+          <Viewer
             site={site}
             roads={roads}
             zoning={zoning}
             volumeResult={volumeResult}
             floorHeights={effectiveFloorHeights}
-            layers={typedLayers}
             shadowTime={layers.shadowTimeShadow ? shadowTime : null}
             shadowMask={shadowMask}
           />
         </div>
 
+        {calcError && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 rounded-full bg-destructive/90 border border-destructive px-4 py-2 text-xs text-destructive-foreground shadow-lg">
+            {calcError}
+          </div>
+        )}
+
         {/* Floating layer preset bar */}
-        <LayerPresetBar
-          preset={preset}
-          layers={layers}
-          onSelectPreset={selectPreset}
-          onToggleLayer={toggleLayer}
-        />
+        <LayerPresetBar />
 
         {/* Floating hero metrics */}
         {volumeResult && (
@@ -326,7 +311,7 @@ export default function ProjectPage() {
 
         {/* Bottom Sheet */}
         <BottomSheet>
-          <MobileStepper activeStep={activeStep} onStepChange={setActiveStep} />
+          <MobileStepper activeStep={resolvedActiveStep} onStepChange={setActiveStep} />
           {sidebarContent}
         </BottomSheet>
       </div>

@@ -9,7 +9,7 @@ import type { Point2D, ShadowProjectionResult, ShadowGridData } from '@/engine/t
 // Component props
 // ---------------------------------------------------------------------------
 
-interface ShadowOverlayProps {
+interface ShadowMapProps {
   shadowProjection: ShadowProjectionResult;
   siteVertices: Point2D[];
   /** Current time for shadow display (null = show heatmap only) */
@@ -274,7 +274,7 @@ function ShadowLegend() {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ShadowOverlay({
+export function ShadowMap({
   shadowProjection,
   siteVertices: _siteVertices,
   shadowTime: _shadowTime,
@@ -282,7 +282,7 @@ export function ShadowOverlay({
   showHeatmap,
   showMeasurementLines,
   showTimeShadow,
-}: ShadowOverlayProps) {
+}: ShadowMapProps) {
   return (
     <group>
       {showHeatmap && <ShadowHeatmap grid={shadowProjection.shadowGrid} />}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { SiteBoundary, Road, ZoningData, VolumeResult } from '@/engine/types';
 import { generateEnvelope } from '@/engine';
 
@@ -11,19 +11,27 @@ interface UseVolumeCalculationParams {
 }
 
 export function useVolumeCalculation({ site, zoning, roads, latitude, floorHeights }: UseVolumeCalculationParams) {
-  const [calcError, setCalcError] = useState<string | null>(null);
-
-  const volumeResult: VolumeResult | null = useMemo(() => {
+  const { volumeResult, calcError } = useMemo<{ volumeResult: VolumeResult | null; calcError: string | null }>(() => {
     if (!site || !zoning || roads.length === 0) {
-      setCalcError(null);
-      return null;
+      return { volumeResult: null, calcError: null };
     }
+
     try {
-      setCalcError(null);
-      return generateEnvelope({ site, zoning, roads, latitude, floorHeights: floorHeights.length > 0 ? floorHeights : undefined });
+      return {
+        volumeResult: generateEnvelope({
+          site,
+          zoning,
+          roads,
+          latitude,
+          floorHeights: floorHeights.length > 0 ? floorHeights : undefined,
+        }),
+        calcError: null,
+      };
     } catch (e) {
-      setCalcError(e instanceof Error ? e.message : '計算エラーが発生しました');
-      return null;
+      return {
+        volumeResult: null,
+        calcError: e instanceof Error ? e.message : '計算エラーが発生しました',
+      };
     }
   }, [site, zoning, roads, latitude, floorHeights]);
 

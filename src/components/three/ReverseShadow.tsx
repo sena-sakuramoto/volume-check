@@ -9,7 +9,7 @@ import type { Point2D, ReverseShadowResult, ContourLine, HeightFieldData } from 
 // Props
 // ---------------------------------------------------------------------------
 
-interface ReverseShadowOverlayProps {
+interface ReverseShadowProps {
   reverseShadow: ReverseShadowResult;
   showContours: boolean;
   showHeightmap: boolean;
@@ -420,12 +420,12 @@ function ReverseShadowLegend({ contourLines, minH, maxH }: { contourLines: Conto
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ReverseShadowOverlay({
+export function ReverseShadow({
   reverseShadow,
   showContours,
   showHeightmap,
   showMeasurementLines,
-}: ReverseShadowOverlayProps) {
+}: ReverseShadowProps) {
   // Compute min/max height for legend
   const { minH, maxH } = useMemo(() => {
     const field = reverseShadow.shadowHeightField;

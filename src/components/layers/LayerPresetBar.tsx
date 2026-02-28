@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { LayerPreset, LayerState } from '@/hooks/useLayerPresets';
+import { useViewerStore } from '@/stores/useViewerStore';
+import type { LayerState } from '@/stores/useViewerStore';
 import { LayoutGrid, Settings2 } from 'lucide-react';
 import { Cube, SunDim } from '@phosphor-icons/react';
 import { cn } from '@/lib/cn';
@@ -9,19 +10,8 @@ import { PRESET_DEFS, LAYER_GROUPS } from './layer-presets';
 
 const ICON_MAP = { Box: Cube, Sun: SunDim, LayoutGrid, Settings2 } as const;
 
-interface LayerPresetBarProps {
-  preset: LayerPreset;
-  layers: LayerState;
-  onSelectPreset: (p: LayerPreset) => void;
-  onToggleLayer: (key: keyof LayerState) => void;
-}
-
-export function LayerPresetBar({
-  preset,
-  layers,
-  onSelectPreset,
-  onToggleLayer,
-}: LayerPresetBarProps) {
+export function LayerPresetBar() {
+  const { preset, layers, selectPreset, toggleLayer } = useViewerStore();
   const [showCustom, setShowCustom] = useState(false);
 
   return (
@@ -35,7 +25,7 @@ export function LayerPresetBar({
             <button
               key={def.key}
               onClick={() => {
-                onSelectPreset(def.key);
+                selectPreset(def.key);
                 if (def.key === 'custom') setShowCustom((v) => !v);
                 else setShowCustom(false);
               }}
@@ -74,7 +64,7 @@ export function LayerPresetBar({
                     <input
                       type="checkbox"
                       checked={layers[item.key as keyof LayerState] ?? false}
-                      onChange={() => onToggleLayer(item.key as keyof LayerState)}
+                      onChange={() => toggleLayer(item.key as keyof LayerState)}
                       className="h-3 w-3 rounded border-border bg-input text-primary"
                     />
                     <span className="text-[11px] text-foreground/80">{item.label}</span>
