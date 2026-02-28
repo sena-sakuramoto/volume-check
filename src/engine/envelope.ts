@@ -494,10 +494,10 @@ function heightFieldToMesh(field: HeightField): MeshData {
       const v01 = vertexMap[i01];
       const v11 = vertexMap[i11];
 
-      // Triangle 1: (00, 10, 01)
-      indexList.push(v00, v10, v01);
-      // Triangle 2: (10, 11, 01)
-      indexList.push(v10, v11, v01);
+      // Triangle 1: CCW from above → normal points up (+Y)
+      indexList.push(v00, v01, v10);
+      // Triangle 2: CCW from above → normal points up (+Y)
+      indexList.push(v10, v01, v11);
     }
   }
 
@@ -906,6 +906,7 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     shadowProjection,
     reverseShadow,
     buildingPatterns,
+    buildablePolygon: zoning.wallSetback !== null ? buildablePolygon : null,
     heightFieldData: zoning.shadowRegulation !== null ? {
       cols: combinedField.cols,
       rows: combinedField.rows,
