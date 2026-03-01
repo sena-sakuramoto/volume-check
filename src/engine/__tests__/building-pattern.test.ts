@@ -2,20 +2,16 @@ import { generateEnvelope } from '../envelope';
 import {
   evaluateShadowCompliance,
   findMaxHeightForPattern,
-  generateBuildingPatterns,
 } from '../building-pattern';
 import { applyWallSetback } from '../wall-setback';
 import { polygonArea } from '../geometry';
 import { DEMO_INPUT, DEMO_SITE, DEMO_ZONING, DEMO_ROADS } from '@/lib/demo-data';
 import type {
   Point2D,
-  SiteBoundary,
   ZoningData,
-  Road,
   VolumeInput,
   VolumeResult,
   ShadowRegulation,
-  BuildingPatternResult,
   PatternResult,
 } from '../types';
 

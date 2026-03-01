@@ -4,7 +4,7 @@ import type {
   VolumeInput,
   VolumeResult,
 } from './types';
-import { distanceToSegment, isInsidePolygon, polygonArea, edgeOutwardAngle } from './geometry';
+import { distanceToSegment, isInsidePolygon } from './geometry';
 import { calculateMaxCoverage } from './coverage';
 import { calculateMaxFloorArea } from './floor-area';
 import { getAbsoluteHeightLimit } from './absolute-height';
@@ -34,6 +34,23 @@ const FLOOR_HEIGHT = 3.0;
 
 /** Threshold for classifying an edge as roughly horizontal (for north detection) */
 const HORIZONTAL_THRESHOLD = 0.3; // radians (~17 degrees)
+
+function signedArea(vertices: Point2D[]): number {
+  let area = 0;
+  const n = vertices.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += vertices[i].x * vertices[j].y - vertices[j].x * vertices[i].y;
+  }
+  return area / 2;
+}
+
+function outwardNormalAngle(a: Point2D, b: Point2D, isCCW: boolean): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  // CCW: outward normal = (-dy, dx), CW: outward normal = (dy, -dx)
+  return isCCW ? Math.atan2(dx, -dy) : Math.atan2(-dx, dy);
+}
 
 // ---------------------------------------------------------------------------
 // Edge classification helpers
@@ -104,14 +121,13 @@ export function isRoadEdge(edge: SiteEdge, roads: Road[]): boolean {
  *
  * Returns delta in radians, or null if no bearing info is available.
  */
-export function computeNorthRotation(roads: Road[], _siteVertices: Point2D[]): number | null {
+export function computeNorthRotation(roads: Road[], siteVertices: Point2D[]): number | null {
   const deltas: number[] = [];
+  const isCCW = signedArea(siteVertices) > 0;
 
   for (const road of roads) {
     const bearingRad = (road.bearing * Math.PI) / 180;
-    const dx = road.edgeEnd.x - road.edgeStart.x;
-    const dy = road.edgeEnd.y - road.edgeStart.y;
-    const coordAngle = Math.atan2(-dx, dy); // outward normal math angle
+    const coordAngle = outwardNormalAngle(road.edgeStart, road.edgeEnd, isCCW);
     const delta = bearingRad + coordAngle - Math.PI / 2;
     deltas.push(delta);
   }
@@ -133,8 +149,8 @@ export function computeNorthRotation(roads: Road[], _siteVertices: Point2D[]): n
  *
  * Formula: compassBearing = (PI/2 + delta) - mathAngle
  */
-export function edgeCompassBearing(edge: SiteEdge, delta: number): number {
-  const coordAngle = edgeOutwardAngle(edge.start, edge.end);
+export function edgeCompassBearing(edge: SiteEdge, delta: number, isCCW: boolean): number {
+  const coordAngle = outwardNormalAngle(edge.start, edge.end, isCCW);
   let bearing = (Math.PI / 2 + delta) - coordAngle;
   // Normalize to [0, 2*PI)
   bearing = ((bearing % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
@@ -155,6 +171,7 @@ export function getNorthEdges(
   roads?: Road[],
 ): SiteEdge[] {
   if (nonRoadEdges.length === 0) return [];
+  const isCCW = signedArea(vertices) > 0;
 
   // Try compass-based detection if roads have bearing info
   if (roads && roads.length > 0) {
@@ -162,7 +179,7 @@ export function getNorthEdges(
     if (northRotation !== null) {
       const northEdges: SiteEdge[] = [];
       for (const edge of nonRoadEdges) {
-        const bearing = edgeCompassBearing(edge, northRotation);
+        const bearing = edgeCompassBearing(edge, northRotation, isCCW);
         // North sector: 315° to 45° (i.e., bearing > 315 or bearing < 45)
         if (bearing >= 315 || bearing <= 45) {
           northEdges.push(edge);
@@ -507,16 +524,12 @@ function heightFieldToMesh(field: HeightField): MeshData {
     for (let col = 0; col < cols - 1; col++) {
       const idx = row * cols + col;
       const idxRight = row * cols + (col + 1);
-      const idxUp = (row + 1) * cols + col;
 
       // Right edge: if current is inside and right is outside (or vice versa)
       if (insideMask[idx] !== insideMask[idxRight]) {
         const insideIdx = insideMask[idx] ? idx : idxRight;
         const topV = vertexMap[insideIdx];
         if (topV >= 0) {
-          // Find the corresponding ground vertex
-          // Ground vertices are offset by groundVertexOffset, in same order as top vertices
-          const groundV = groundVertexOffset + topV;
           // Simple side: connect top to ground (degenerate, but sufficient for visualization)
           // A proper side wall would need the adjacent vertex too - handled below
         }

@@ -137,7 +137,7 @@ describe('validateVolumeInput', () => {
   it('returns error for invalid zoning district name', () => {
     const input = {
       ...validInput,
-      zoning: { ...validZoning, district: '架空地域' as any },
+      zoning: { ...validZoning, district: '架空地域' as unknown as ZoningData['district'] },
     };
     const errors = validateVolumeInput(input);
     expect(errors.length).toBeGreaterThan(0);

@@ -59,7 +59,7 @@ export const useViewerStore = create<ViewerStore>((set) => ({
   shadowTimeValue: 120,
 
   selectPreset: (p) =>
-    set((state) => {
+    set(() => {
       if (p === 'custom') return { preset: 'custom' };
       return { preset: p, layers: { ...PRESETS[p] } };
     }),

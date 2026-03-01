@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { ZoningData, VolumeResult, SiteBoundary, Road } from '@/engine/types';
 import { getRoadSetbackParams, getAdjacentSetbackParams, getNorthSetbackParams } from '@/engine';
 import { MAX_HEIGHT_CAP } from '@/engine/constants';
@@ -8,7 +9,7 @@ import { PatternComparison } from '@/components/results/PatternComparison';
 import { FloorTable } from '@/components/results/FloorTable';
 import { ActionToolbar } from '@/components/results/ActionToolbar';
 import { FloorEditor } from '@/components/ui/FloorEditor';
-import { AiChat } from '@/components/chat/AiChat';
+import { Input } from '@/components/ui/shadcn/input';
 
 function DataRow({ label, value }: { label: string; value: string }) {
   return (
@@ -37,7 +38,6 @@ interface ResultsSectionProps {
   site: SiteBoundary | null;
   roads: Road[];
   floorHeights: number[];
-  latitude: number;
   onFloorHeightsChange: (heights: number[]) => void;
 }
 
@@ -47,9 +47,16 @@ export function ResultsSection({
   site,
   roads,
   floorHeights,
-  latitude,
   onFloorHeightsChange,
 }: ResultsSectionProps) {
+  const [landPriceInput, setLandPriceInput] = useState('');
+  const landPrice = parseFloat(landPriceInput);
+  const floorAreaTsubo = result ? result.maxFloorArea / 3.30579 : 0;
+  const ichishuUnitPrice =
+    result && Number.isFinite(landPrice) && landPrice > 0 && floorAreaTsubo > 0
+      ? landPrice / floorAreaTsubo
+      : null;
+
   if (!zoning) {
     return (
       <div className="p-4">
@@ -109,6 +116,33 @@ export function ResultsSection({
       {result && (
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground mb-2">計算結果</h3>
+          <div className="rounded-lg bg-card border border-border px-3 py-2 mb-2 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">土地価格</span>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  value={landPriceInput}
+                  onChange={(e) => setLandPriceInput(e.target.value)}
+                  placeholder="例: 30000"
+                  min="0"
+                  step="100"
+                  className="h-7 w-32 text-xs text-right"
+                />
+                <span className="text-xs text-muted-foreground">万円</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs font-medium text-foreground">一種単価（参考）</span>
+              <span className="text-sm font-bold text-primary">
+                {ichishuUnitPrice !== null ? ichishuUnitPrice.toFixed(1) : '--'}
+                <span className="ml-0.5 text-xs font-normal text-muted-foreground">万円/坪</span>
+              </span>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              計算式: 土地価格 ÷ (最大延べ面積 ÷ 3.30579)
+            </p>
+          </div>
           <div className="rounded-lg bg-card border border-border px-3 py-2 divide-y divide-border">
             <ResultValue label="最大延べ面積" value={result.maxFloorArea.toFixed(2)} unit="m²" />
             <ResultValue label="最大建築面積" value={result.maxCoverageArea.toFixed(2)} unit="m²" />
@@ -156,11 +190,6 @@ export function ResultsSection({
         </div>
       )}
 
-      {/* AI Quick Actions */}
-      {result && (
-        <AiChat zoning={zoning} result={result} siteArea={site?.area ?? null} />
-      )}
-
       {/* Actions */}
       <ActionToolbar
         zoning={zoning}
@@ -168,7 +197,6 @@ export function ResultsSection({
         site={site}
         roads={roads}
         floorHeights={floorHeights}
-        latitude={latitude}
       />
     </div>
   );

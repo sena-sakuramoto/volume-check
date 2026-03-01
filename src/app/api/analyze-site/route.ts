@@ -147,11 +147,9 @@ export async function POST(req: NextRequest) {
 
     const genai = new GoogleGenAI({ apiKey });
 
-    // Try models in order of preference, falling back if unavailable
+    // Gemini 3.1 Pro — best vision/reasoning model
     const MODELS = [
       'gemini-3.1-pro-preview',
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
     ];
 
     let response;

@@ -128,7 +128,7 @@ function signedArea(ring: Point[]): number {
 const DISTRICT_KEYS = [
   '用途地域', 'use_area_ja', 'youto', 'youto_chiiki',
   'A29_004', 'A29_005', 'name', 'district', 'zone',
-  '用途地域名', 'use_district',
+  '用途地域名', 'use_district', '用途地域コード', 'use_district_code',
 ];
 
 const COVERAGE_KEYS = [
@@ -164,6 +164,56 @@ function parseNumericValue(val: string | number | undefined): number | undefined
   if (typeof val === 'number') return val;
   const match = String(val).match(/(\d+(?:\.\d+)?)/);
   return match ? parseFloat(match[1]) : undefined;
+}
+
+const DISTRICT_CODE_TO_NAME: Record<string, string> = {
+  '1': '第一種低層住居専用地域',
+  '01': '第一種低層住居専用地域',
+  '2': '第二種低層住居専用地域',
+  '02': '第二種低層住居専用地域',
+  '3': '第一種中高層住居専用地域',
+  '03': '第一種中高層住居専用地域',
+  '4': '第二種中高層住居専用地域',
+  '04': '第二種中高層住居専用地域',
+  '5': '第一種住居地域',
+  '05': '第一種住居地域',
+  '6': '第二種住居地域',
+  '06': '第二種住居地域',
+  '7': '準住居地域',
+  '07': '準住居地域',
+  '8': '田園住居地域',
+  '08': '田園住居地域',
+  '9': '近隣商業地域',
+  '09': '近隣商業地域',
+  '10': '商業地域',
+  '11': '準工業地域',
+  '12': '工業地域',
+  '13': '工業専用地域',
+};
+
+function normalizeDistrictValue(val: string | number | undefined): string | undefined {
+  if (val === undefined) return undefined;
+  const raw = String(val).trim();
+  if (!raw) return undefined;
+
+  const compact = raw
+    .replace(/[ \t　]/g, '')
+    .replace(/[()（）]/g, '')
+    .replace(/第?1種/g, '第一種')
+    .replace(/第?2種/g, '第二種')
+    .replace(/第?3種/g, '第三種');
+
+  if (DISTRICT_CODE_TO_NAME[compact]) return DISTRICT_CODE_TO_NAME[compact];
+
+  const codeMatch = compact.match(/(?:用途地域コード|コード|code|zone)?[:：=]?([0-9]{1,2})$/i);
+  if (codeMatch) {
+    const code = codeMatch[1];
+    if (DISTRICT_CODE_TO_NAME[code]) return DISTRICT_CODE_TO_NAME[code];
+    const padded = code.padStart(2, '0');
+    if (DISTRICT_CODE_TO_NAME[padded]) return DISTRICT_CODE_TO_NAME[padded];
+  }
+
+  return compact;
 }
 // ---------------------------------------------------------------------------
 // Main handler
@@ -323,7 +373,7 @@ async function tryFetchZoning(
       const farRaw = findProperty(props, FAR_KEYS);
       const fireRaw = findProperty(props, FIRE_KEYS);
 
-      const district = districtRaw ? String(districtRaw) : '不明';
+      const district = normalizeDistrictValue(districtRaw) ?? '不明';
       const coverageRatio = parseNumericValue(coverageRaw) ?? 0;
       const floorAreaRatio = parseNumericValue(farRaw) ?? 0;
       const fireDistrict = fireRaw ? String(fireRaw) : '指定なし';

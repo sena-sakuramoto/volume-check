@@ -2,7 +2,6 @@
 
 import { useCallback } from 'react';
 import { Input } from '@/components/ui/shadcn/input';
-import { Button } from '@/components/ui/shadcn/button';
 import { Plus, Trash2 } from 'lucide-react';
 import type { RoadConfig, RoadDirection } from './site-types';
 import { ROAD_WIDTH_PRESETS, ROAD_DIRECTION_OPTIONS } from './site-types';

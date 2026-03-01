@@ -41,6 +41,8 @@ pnpm lint
 | 変数名 | 必須 | 説明 |
 |--------|------|------|
 | `GEMINI_API_KEY` | 任意 | Google Gemini APIキー（図面AI解析に必要。未設定でもボリュームチェック機能は利用可能） |
+| `PARCEL_SHAPE_API_URL` | 任意 | 住所/座標から敷地ポリゴンを返す外部APIエンドポイント（未設定時は敷地形状自動取得をスキップ） |
+| `PARCEL_SHAPE_API_KEY` | 任意 | 敷地形状APIの認証キー（`X-API-Key` ヘッダーで送信） |
 
 ## 技術スタック
 

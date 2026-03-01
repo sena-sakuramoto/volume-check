@@ -22,6 +22,8 @@ interface AddressSearchProps extends SiteCallbacks {
 }
 
 export function AddressSearch({
+  onSiteChange,
+  onRoadsChange,
   onLatitudeChange,
   onZoningChange,
   onDistrictDetected,
@@ -64,13 +66,47 @@ export function AddressSearch({
 
       setSearchStatus({ state: 'zoning-loading', address: confirmedAddress, lat, lng });
 
-      const zoningRes = await fetch('/api/zoning-lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat, lng }),
-      });
+      const [zoningRes, shapeRes] = await Promise.allSettled([
+        fetch('/api/zoning-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng }),
+        }),
+        fetch('/api/site-shape-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng, address: confirmedAddress }),
+        }),
+      ]);
 
-      if (!zoningRes.ok) {
+      let siteDetected = false;
+      if (shapeRes.status === 'fulfilled' && shapeRes.value.ok) {
+        const shapeData: {
+          site?: { vertices: { x: number; y: number }[]; area: number };
+          roads?: Array<{
+            edgeStart: { x: number; y: number };
+            edgeEnd: { x: number; y: number };
+            width: number;
+            centerOffset: number;
+            bearing: number;
+          }>;
+        } = await shapeRes.value.json();
+
+        if (shapeData.site && Array.isArray(shapeData.site.vertices) && shapeData.site.vertices.length >= 3) {
+          onSiteChange(shapeData.site);
+          siteDetected = true;
+        }
+        if (Array.isArray(shapeData.roads) && shapeData.roads.length > 0) {
+          onRoadsChange(shapeData.roads);
+        }
+      }
+
+      if (zoningRes.status !== 'fulfilled') {
+        setSearchStatus({ state: 'zoning-not-found', address: confirmedAddress });
+        return;
+      }
+
+      if (!zoningRes.value.ok) {
         setSearchStatus({ state: 'zoning-not-found', address: confirmedAddress });
         return;
       }
@@ -80,7 +116,7 @@ export function AddressSearch({
         coverageRatio: number;
         floorAreaRatio: number;
         fireDistrict: string;
-      } = await zoningRes.json();
+      } = await zoningRes.value.json();
 
       const matchedDistrict = matchDistrict(zoningData.district);
       if (!matchedDistrict) {
@@ -97,7 +133,12 @@ export function AddressSearch({
       onFarDetected(normalizedFAR > 0 ? String(Math.round(normalizedFAR * 100)) : '');
       onFireDetected(matchedFire);
 
-      setSearchStatus({ state: 'success', address: confirmedAddress, district: matchedDistrict });
+      setSearchStatus({
+        state: 'success',
+        address: confirmedAddress,
+        district: matchedDistrict,
+        siteDetected,
+      });
 
       onZoningChange(
         buildZoningData(matchedDistrict, {
@@ -109,7 +150,17 @@ export function AddressSearch({
     } catch {
       setSearchStatus({ state: 'error', message: 'サーバーに接続できませんでした' });
     }
-  }, [address, onLatitudeChange, onZoningChange, onDistrictDetected, onCoverageDetected, onFarDetected, onFireDetected]);
+  }, [
+    address,
+    onSiteChange,
+    onRoadsChange,
+    onLatitudeChange,
+    onZoningChange,
+    onDistrictDetected,
+    onCoverageDetected,
+    onFarDetected,
+    onFireDetected,
+  ]);
 
   return (
     <div className="space-y-2">
@@ -140,6 +191,7 @@ export function AddressSearch({
             <p className="text-[11px] text-emerald-300 truncate">{searchStatus.address}</p>
             <p className="text-[10px] text-emerald-400/70">
               {shortenDistrict(searchStatus.district)} を自動設定しました
+              {searchStatus.siteDetected ? '（敷地形状も取得）' : ''}
             </p>
           </div>
         </div>

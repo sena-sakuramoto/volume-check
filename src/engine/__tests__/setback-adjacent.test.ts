@@ -104,7 +104,6 @@ describe('calculateAdjacentSetbackHeight', () => {
     });
 
     it('produces higher limits than residential at same distance', () => {
-      const dist = 5;
       const point: Point2D = { x: 5, y: 7.5 };
       const residential = calculateAdjacentSetbackHeight(
         point,

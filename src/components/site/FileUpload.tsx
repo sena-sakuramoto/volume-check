@@ -6,7 +6,6 @@ import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { UploadSimple } from '@phosphor-icons/react';
 import { parseSiteFile } from '@/lib/site-file-parser';
 import type { UploadStatus, AnalyzeSiteResponse, RoadDirection, SiteCallbacks } from './site-types';
-import { ROAD_WIDTH_PRESETS } from './site-types';
 import {
   buildPolygonSite,
   buildRoadFromEdge,

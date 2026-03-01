@@ -135,9 +135,6 @@ function resolveSelfintersection(vertices: Point2D[]): Point2D[] {
 
         // Jump to the other edge at the intersection
         const nextEdge = intInfo.otherEdge;
-        const nextIxOnOtherEdge = edgeIntersections[nextEdge].findIndex(
-          x => x.otherEdge === edge && Math.abs(x.otherT - intInfo.t) < 1e-10
-        );
 
         // Trace along nextEdge: add vertices after the intersection point
         // until we reach the next intersection or loop back

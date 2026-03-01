@@ -5,7 +5,7 @@ import type { SiteBoundary } from '@/engine/types';
 import { Input } from '@/components/ui/shadcn/input';
 import { Button } from '@/components/ui/shadcn/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/shadcn/toggle-group';
-import { Plus, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface SiteEditorProps {
   site: SiteBoundary | null;

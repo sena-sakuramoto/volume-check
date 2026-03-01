@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useCallback, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
 type SnapPoint = 'collapsed' | 'half' | 'full';
@@ -19,15 +19,15 @@ interface BottomSheetProps {
 export function BottomSheet({ children, className }: BottomSheetProps) {
   const [snap, setSnap] = useState<SnapPoint>('half');
   const [dragOffset, setDragOffset] = useState(0);
+  const [dragBaseVh, setDragBaseVh] = useState(SNAP_VH.half);
   const [isDragging, setIsDragging] = useState(false);
   const startY = useRef(0);
-  const startSnap = useRef<SnapPoint>('half');
 
   const currentVh = SNAP_VH[snap];
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
-    startSnap.current = snap;
+    setDragBaseVh(SNAP_VH[snap]);
     setIsDragging(true);
   }, [snap]);
 
@@ -39,7 +39,7 @@ export function BottomSheet({ children, className }: BottomSheetProps) {
 
   const handleTouchEnd = useCallback(() => {
     setIsDragging(false);
-    const baseVh = SNAP_VH[startSnap.current];
+    const baseVh = dragBaseVh;
     const windowH = window.innerHeight;
     const deltaVh = (dragOffset / windowH) * 100;
     const targetVh = baseVh + deltaVh;
@@ -56,10 +56,10 @@ export function BottomSheet({ children, className }: BottomSheetProps) {
     }
     setSnap(bestSnap);
     setDragOffset(0);
-  }, [dragOffset]);
+  }, [dragBaseVh, dragOffset]);
 
   const heightStyle = isDragging
-    ? { height: `calc(${SNAP_VH[startSnap.current]}vh + ${dragOffset}px)` }
+    ? { height: `calc(${dragBaseVh}vh + ${dragOffset}px)` }
     : { height: `${currentVh}vh` };
 
   return (
@@ -79,7 +79,7 @@ export function BottomSheet({ children, className }: BottomSheetProps) {
         onTouchEnd={handleTouchEnd}
         onMouseDown={(e) => {
           startY.current = e.clientY;
-          startSnap.current = snap;
+          setDragBaseVh(SNAP_VH[snap]);
           setIsDragging(true);
           const handleMove = (ev: MouseEvent) => {
             setDragOffset(startY.current - ev.clientY);

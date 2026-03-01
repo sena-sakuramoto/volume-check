@@ -108,7 +108,7 @@ export function ZoningEditor({
                 className={cn(
                   'flex-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors',
                   fireDistrict === fd
-                    ? 'bg-red-600/80 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-secondary text-muted-foreground hover:text-foreground',
                 )}
               >
@@ -144,7 +144,7 @@ export function ZoningEditor({
                 className={cn(
                   'flex-1 rounded-md px-1.5 py-1 text-[10px] font-medium transition-colors',
                   heightDistrictType === hd
-                    ? 'bg-purple-600/80 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-secondary text-muted-foreground hover:text-foreground',
                 )}
               >

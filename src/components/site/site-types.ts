@@ -3,8 +3,6 @@ import type {
   Road,
   ZoningData,
   ZoningDistrict,
-  FireDistrict,
-  HeightDistrict,
 } from '@/engine/types';
 
 /** Analyze-site API response type */
@@ -43,7 +41,7 @@ export type SearchStatus =
   | { state: 'loading' }
   | { state: 'geocoded'; address: string; lat: number; lng: number }
   | { state: 'zoning-loading'; address: string; lat: number; lng: number }
-  | { state: 'success'; address: string; district: ZoningDistrict }
+  | { state: 'success'; address: string; district: ZoningDistrict; siteDetected?: boolean }
   | { state: 'zoning-not-found'; address: string }
   | { state: 'error'; message: string };
 

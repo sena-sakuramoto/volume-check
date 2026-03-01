@@ -9,8 +9,6 @@ export interface PresetDef {
 export const PRESET_DEFS: PresetDef[] = [
   { key: 'basic', label: '基本', icon: 'Box' },
   { key: 'shadow', label: '日影', icon: 'Sun' },
-  { key: 'pattern', label: 'パターン', icon: 'LayoutGrid' },
-  { key: 'custom', label: 'カスタム', icon: 'Settings2' },
 ];
 
 export interface LayerDef {

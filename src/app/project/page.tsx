@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import type { SiteBoundary, Road, ZoningData, ZoningDistrict, FireDistrict, HeightDistrict } from '@/engine/types';
 import { useVolumeCalculation } from '@/hooks/useVolumeCalculation';
 import { useShadow } from '@/hooks/useShadow';
 import { useAutoSave, loadProject } from '@/hooks/useAutoSave';
 import { useViewerStore } from '@/stores/useViewerStore';
-import { DEMO_SITE, DEMO_ROADS, DEMO_ZONING } from '@/lib/demo-data';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import type { Step } from '@/components/sidebar/SidebarStepper';
 import { SiteSection } from '@/components/sidebar/SiteSection';
@@ -34,21 +33,25 @@ const Viewer = dynamic(
   },
 );
 
-function getInitialSavedProject() {
-  if (typeof window === 'undefined') return null;
-  return loadProject();
-}
-
 export default function ProjectPage() {
-  const initialSavedProject = useMemo(() => getInitialSavedProject(), []);
-
-  // Core state
-  const [site, setSite] = useState<SiteBoundary | null>(() => initialSavedProject?.site ?? null);
-  const [roads, setRoads] = useState<Road[]>(() => initialSavedProject?.roads ?? []);
-  const [zoning, setZoning] = useState<ZoningData | null>(() => initialSavedProject?.zoning ?? null);
-  const [latitude, setLatitude] = useState(() => initialSavedProject?.latitude ?? 35.68);
-  const [floorHeights, setFloorHeights] = useState<number[]>(() => initialSavedProject?.floorHeights ?? []);
+  // Core state — start empty to match SSR, restore from localStorage in useEffect
+  const [site, setSite] = useState<SiteBoundary | null>(null);
+  const [roads, setRoads] = useState<Road[]>([]);
+  const [zoning, setZoning] = useState<ZoningData | null>(null);
+  const [latitude, setLatitude] = useState(35.68);
+  const [floorHeights, setFloorHeights] = useState<number[]>([]);
   const { layers, shadowTimeValue, setShadowTime: setShadowTimeValue } = useViewerStore();
+
+  // Restore saved project after mount (avoids hydration mismatch)
+  useEffect(() => {
+    const saved = loadProject();
+    if (!saved) return;
+    if (saved.site) setSite(saved.site);
+    if (saved.roads) setRoads(saved.roads);
+    if (saved.zoning) setZoning(saved.zoning);
+    if (saved.latitude != null) setLatitude(saved.latitude);
+    if (saved.floorHeights) setFloorHeights(saved.floorHeights);
+  }, []);
 
   // UI state
   const [activeStep, setActiveStep] = useState<Step>(1);
@@ -130,14 +133,6 @@ export default function ProjectPage() {
     setIsCornerLot(v); rebuildZoning({ corner: v });
   }, [rebuildZoning]);
 
-  const handleLoadDemo = useCallback(() => {
-    setSite(DEMO_SITE);
-    setRoads(DEMO_ROADS);
-    setZoning(DEMO_ZONING);
-    setHasNavigated(true);
-    setActiveStep(3);
-  }, []);
-
   const completedSteps = useMemo(() => ({
     1: !!site && roads.length > 0,
     2: !!zoning,
@@ -154,7 +149,6 @@ export default function ProjectPage() {
           onRoadsChange={setRoads}
           onZoningChange={setZoning}
           onLatitudeChange={setLatitude}
-          onLoadDemo={handleLoadDemo}
           selectedDistrict={selectedDistrict}
           onDistrictChange={handleDistrictChange}
           coverageOverride={coverageOverride}
@@ -193,7 +187,6 @@ export default function ProjectPage() {
           site={site}
           roads={roads}
           floorHeights={effectiveFloorHeights}
-          latitude={latitude}
           onFloorHeightsChange={setFloorHeights}
         />
       )}

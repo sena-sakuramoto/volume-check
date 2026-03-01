@@ -1,4 +1,4 @@
-import { getNorthEdges, computeNorthRotation, edgeCompassBearing, SiteEdge } from '../envelope';
+import { getNorthEdges, computeNorthRotation, SiteEdge } from '../envelope';
 import type { Point2D, Road } from '../types';
 
 /** Helper to create a road with specific bearing and edge */

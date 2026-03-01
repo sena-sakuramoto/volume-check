@@ -41,6 +41,7 @@ export function SidebarStepper({ activeStep, onStepChange, completedSteps }: Sid
                     : 'text-muted-foreground hover:text-foreground',
               )}
             >
+              <Icon className="h-3 w-3" />
               <div className={cn(
                 'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold',
                 isActive

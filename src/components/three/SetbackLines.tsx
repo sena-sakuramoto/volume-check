@@ -127,7 +127,7 @@ export function SetbackLines({ site, roads, zoning, layers }: SetbackLinesProps)
 
     const allEdges = getSiteEdges(site.vertices);
     const nonRoadEdges = allEdges.filter((e) => !isRoadEdge(e, roads));
-    const northSiteEdges = getNorthEdges(nonRoadEdges, site.vertices);
+    const northSiteEdges = getNorthEdges(nonRoadEdges, site.vertices, roads);
 
     // Build Edge objects with inward normals for rendering
     const toRenderEdge = (se: { start: { x: number; y: number }; end: { x: number; y: number } }): Edge => {

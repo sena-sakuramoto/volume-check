@@ -2,12 +2,11 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { SiteBoundary, Road, ZoningData, ZoningDistrict, FireDistrict, HeightDistrict } from '@/engine/types';
-import { Button } from '@/components/ui/shadcn/button';
 import { AddressSearch } from '@/components/site/AddressSearch';
 import { FileUpload } from '@/components/site/FileUpload';
 import { SiteEditor } from '@/components/site/SiteEditor';
 import { RoadEditor } from '@/components/site/RoadEditor';
-import type { RoadConfig, RoadDirection } from '@/components/site/site-types';
+import type { RoadConfig } from '@/components/site/site-types';
 import { buildRectSite, buildRoad, buildZoningData } from '@/components/site/site-helpers';
 
 interface SiteSectionProps {
@@ -16,7 +15,6 @@ interface SiteSectionProps {
   onRoadsChange: (roads: Road[]) => void;
   onZoningChange: (zoning: ZoningData) => void;
   onLatitudeChange: (lat: number) => void;
-  onLoadDemo: () => void;
   /** Pass detected zoning state up to parent for cross-step coordination */
   selectedDistrict: ZoningDistrict | null;
   onDistrictChange: (d: ZoningDistrict) => void;
@@ -39,7 +37,6 @@ export function SiteSection({
   onRoadsChange,
   onZoningChange,
   onLatitudeChange,
-  onLoadDemo,
   selectedDistrict,
   onDistrictChange,
   coverageOverride,
@@ -129,15 +126,6 @@ export function SiteSection({
         onFarDetected={onFarChange}
         onFireDetected={onFireDistrictChange}
       />
-
-      <Button
-        onClick={onLoadDemo}
-        variant="outline"
-        size="sm"
-        className="w-full border-dashed"
-      >
-        デモデータを使う
-      </Button>
 
       <div className="flex items-center gap-2">
         <div className="flex-1 border-t border-border" />

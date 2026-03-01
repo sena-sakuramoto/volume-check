@@ -1,6 +1,5 @@
 'use client';
 
-import { cn } from '@/lib/cn';
 import { SidebarStepper, type Step } from './SidebarStepper';
 import { PanelLeftClose, PanelLeft } from 'lucide-react';
 
