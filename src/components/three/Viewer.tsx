@@ -10,16 +10,17 @@ import {
   GizmoViewport,
   Environment,
 } from '@react-three/drei';
-import * as THREE from 'three';
 import type { VolumeResult, SiteBoundary, Road, ZoningData } from '@/engine/types';
 import { useViewerStore } from '@/stores/useViewerStore';
 import { EnvelopeMesh } from './EnvelopeMesh';
 import { SetbackLayer } from './SetbackLayer';
+import { SetbackLines } from './SetbackLines';
 import { SitePlane } from './SitePlane';
 import { FloorSlices } from './FloorSlices';
 import { ShadowMap } from './ShadowMap';
 import { ReverseShadow } from './ReverseShadow';
 import { PatternWireframe } from './PatternWireframe';
+import { TrueNorthArrow } from './TrueNorthArrow';
 
 export interface ViewerProps {
   site: SiteBoundary | null;
@@ -59,14 +60,15 @@ function computeCamera(site: SiteBoundary | null): {
 }
 
 const SETBACK_COLORS: Record<string, string> = {
-  road: '#d97706',
-  adjacent: '#059669',
-  north: '#7c3aed',
-  absoluteHeight: '#dc2626',
-  shadow: '#0891b2',
+  road: '#f59e0b',
+  adjacent: '#10b981',
+  north: '#8b5cf6',
+  absoluteHeight: '#ef4444',
+  shadow: '#22d3ee',
 };
 
 export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadowTime, shadowMask }: ViewerProps) {
+  void shadowTime;
   const { position: cameraPos, target } = useMemo(() => computeCamera(site), [site]);
   const layers = useViewerStore((s) => s.layers);
 
@@ -174,8 +176,6 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
         {site && volumeResult?.shadowProjection && (
           <ShadowMap
             shadowProjection={volumeResult.shadowProjection}
-            siteVertices={site.vertices}
-            shadowTime={shadowTime ?? null}
             shadowMask={shadowMask ?? null}
             showHeatmap={layers.shadowHeatmap}
             showMeasurementLines={!layers.reverseShadowContours && layers.shadowMeasurementLines}
@@ -192,6 +192,21 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
         )}
         {volumeResult?.buildingPatterns?.optimal && layers.buildingPatternOptimal && (
           <PatternWireframe pattern={volumeResult.buildingPatterns.optimal} color="#22d3ee" />
+        )}
+
+        {/* Setback boundary markers + slope lines + labels */}
+        {site && zoning && roads.length > 0 && (
+          <SetbackLines
+            site={site}
+            roads={roads}
+            zoning={zoning}
+            layers={layers}
+          />
+        )}
+
+        {/* True north compass arrow */}
+        {site && roads.length > 0 && (
+          <TrueNorthArrow site={site} roads={roads} />
         )}
 
         {/* Controls */}
