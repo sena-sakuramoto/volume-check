@@ -79,11 +79,19 @@ export default function ProjectPage() {
   });
   useAutoSave({ site, roads, zoning, latitude, floorHeights });
 
+  // Auto-advance only on initial load (when saved project is restored)
+  const [hasNavigated, setHasNavigated] = useState(false);
   const resolvedActiveStep = useMemo<Step>(() => {
+    if (hasNavigated) return activeStep;
     if (activeStep < 2 && site && roads.length > 0) return 2;
     if (activeStep < 3 && zoning && volumeResult) return 3;
     return activeStep;
-  }, [activeStep, site, roads, zoning, volumeResult]);
+  }, [activeStep, site, roads, zoning, volumeResult, hasNavigated]);
+
+  const handleStepChange = useCallback((step: Step) => {
+    setHasNavigated(true);
+    setActiveStep(step);
+  }, []);
 
   // Consolidated zoning rebuild helper
   const rebuildZoning = useCallback((overrides: {
@@ -126,6 +134,7 @@ export default function ProjectPage() {
     setSite(DEMO_SITE);
     setRoads(DEMO_ROADS);
     setZoning(DEMO_ZONING);
+    setHasNavigated(true);
     setActiveStep(3);
   }, []);
 
@@ -215,7 +224,7 @@ export default function ProjectPage() {
       <div className="hidden md:flex flex-1 gap-3 px-4 pb-4 overflow-hidden">
         <Sidebar
           activeStep={resolvedActiveStep}
-          onStepChange={setActiveStep}
+          onStepChange={handleStepChange}
           completedSteps={completedSteps}
           collapsed={sidebarCollapsed}
           onCollapsedChange={setSidebarCollapsed}
@@ -311,7 +320,7 @@ export default function ProjectPage() {
 
         {/* Bottom Sheet */}
         <BottomSheet>
-          <MobileStepper activeStep={resolvedActiveStep} onStepChange={setActiveStep} />
+          <MobileStepper activeStep={resolvedActiveStep} onStepChange={handleStepChange} />
           {sidebarContent}
         </BottomSheet>
       </div>

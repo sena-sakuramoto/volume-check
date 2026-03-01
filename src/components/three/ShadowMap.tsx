@@ -3,7 +3,7 @@
 import { useMemo, useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { Html } from '@react-three/drei';
-import type { Point2D, ShadowProjectionResult, ShadowGridData } from '@/engine/types';
+import type { ShadowProjectionResult, ShadowGridData, Point2D } from '@/engine/types';
 
 // ---------------------------------------------------------------------------
 // Component props
@@ -11,9 +11,6 @@ import type { Point2D, ShadowProjectionResult, ShadowGridData } from '@/engine/t
 
 interface ShadowMapProps {
   shadowProjection: ShadowProjectionResult;
-  siteVertices: Point2D[];
-  /** Current time for shadow display (null = show heatmap only) */
-  shadowTime: { hour: number; minute: number } | null;
   /** Shadow mask for current time (1=shadow, 0=not) - same grid as shadowGrid */
   shadowMask: Uint8Array | null;
   /** Visibility toggles */
@@ -276,8 +273,6 @@ function ShadowLegend() {
 
 export function ShadowMap({
   shadowProjection,
-  siteVertices: _siteVertices,
-  shadowTime: _shadowTime,
   shadowMask,
   showHeatmap,
   showMeasurementLines,
