@@ -2,6 +2,7 @@
 
 import type { ZoningData, VolumeResult } from '@/engine/types';
 import { MAX_HEIGHT_CAP } from '@/engine/constants';
+import type { FeasibilityResult, UseType } from '@/engine/feasibility';
 
 interface PrintReportProps {
   zoning: ZoningData | null;
@@ -9,6 +10,11 @@ interface PrintReportProps {
   siteArea: number | null;
   floorHeights?: number[];
   latitude?: number;
+  feasibility?: {
+    useType: UseType;
+    landCost: number;
+    result: FeasibilityResult;
+  } | null;
 }
 
 const td = { padding: '4px 8px', borderBottom: '1px solid #eee', color: '#555' } as const;
@@ -16,12 +22,23 @@ const tdVal = { padding: '4px 8px', borderBottom: '1px solid #eee', textAlign: '
 const tdBold = { ...tdVal, fontWeight: 'bold' as const };
 const h2Style = { fontSize: '1.1rem', fontWeight: 'bold' as const, marginBottom: '0.5rem', borderBottom: '1px solid #ccc', paddingBottom: '0.25rem' };
 
-export function PrintReport({ zoning, result, siteArea, floorHeights, latitude }: PrintReportProps) {
+export function PrintReport({
+  zoning,
+  result,
+  siteArea,
+  floorHeights,
+  latitude,
+  feasibility,
+}: PrintReportProps) {
   if (!zoning || !result) return null;
 
   // Floor breakdown
   const floors = floorHeights && floorHeights.length > 0 ? floorHeights : [];
   const totalFloorHeight = floors.reduce((s, h) => s + h, 0);
+  const fmtMan = (value: number | null): string =>
+    value !== null ? value.toLocaleString('ja-JP', { maximumFractionDigits: 0 }) : '-';
+  const fmtOku = (value: number | null): string =>
+    value !== null ? `${(value / 10000).toFixed(2)}億円` : '-';
 
   return (
     <div className="print-area hidden" style={{ background: 'white', color: 'black', padding: '2rem', fontFamily: 'serif' }}>
@@ -213,6 +230,74 @@ export function PrintReport({ zoning, result, siteArea, floorHeights, latitude }
           <p style={{ fontSize: '0.75rem', color: '#888', marginBottom: '1rem' }}>
             逆日影ラインは日影規制により各地点で許容される最大建物高さの等高線です。
           </p>
+        </>
+      )}
+
+      {feasibility && (
+        <>
+          <h2 style={h2Style}>事業性概算</h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+            <tbody>
+              <tr>
+                <td style={td}>想定用途</td>
+                <td style={tdVal}>{feasibility.useType}</td>
+              </tr>
+              <tr>
+                <td style={td}>延床面積</td>
+                <td style={tdVal}>{feasibility.result.totalFloorAreaTsubo.toFixed(1)} 坪</td>
+              </tr>
+              <tr>
+                <td style={td}>概算建設費</td>
+                <td style={tdVal}>
+                  {fmtOku(feasibility.result.constructionCost)}（{fmtMan(feasibility.result.constructionCost)} 万円）
+                </td>
+              </tr>
+              <tr>
+                <td style={td}>土地取得費</td>
+                <td style={tdVal}>{fmtOku(feasibility.landCost)}（{fmtMan(feasibility.landCost)} 万円）</td>
+              </tr>
+              <tr>
+                <td style={td}>総事業費</td>
+                <td style={tdBold}>
+                  {fmtOku(feasibility.result.totalProjectCost)}（{fmtMan(feasibility.result.totalProjectCost)} 万円）
+                </td>
+              </tr>
+              {feasibility.result.annualRentalIncome !== null && (
+                <>
+                  <tr>
+                    <td style={td}>年間賃料収入</td>
+                    <td style={tdVal}>
+                      {fmtOku(feasibility.result.annualRentalIncome)}（{fmtMan(feasibility.result.annualRentalIncome)} 万円）
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={td}>表面利回り</td>
+                    <td style={tdVal}>{feasibility.result.grossYield?.toFixed(1) ?? '-'}%</td>
+                  </tr>
+                </>
+              )}
+              {feasibility.result.totalSaleRevenue !== null && (
+                <>
+                  <tr>
+                    <td style={td}>販売総額</td>
+                    <td style={tdVal}>
+                      {fmtOku(feasibility.result.totalSaleRevenue)}（{fmtMan(feasibility.result.totalSaleRevenue)} 万円）
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={td}>事業収支</td>
+                    <td style={tdVal}>
+                      {fmtOku(feasibility.result.profitLoss)}（{fmtMan(feasibility.result.profitLoss)} 万円）
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={td}>利益率</td>
+                    <td style={tdVal}>{feasibility.result.profitMargin?.toFixed(1) ?? '-'}%</td>
+                  </tr>
+                </>
+              )}
+            </tbody>
+          </table>
         </>
       )}
 

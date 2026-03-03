@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import type { ZoningData, VolumeResult, SiteBoundary, Road } from '@/engine/types';
+import type { FeasibilitySnapshot } from '@/components/results/FeasibilitySection';
 import { FilePdf } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/shadcn/button';
 import { generatePdfReport } from '@/lib/pdf-export';
@@ -16,9 +17,17 @@ interface ActionToolbarProps {
   site: SiteBoundary | null;
   roads: Road[];
   floorHeights: number[];
+  feasibility: FeasibilitySnapshot | null;
 }
 
-export function ActionToolbar({ zoning, result, site, roads, floorHeights }: ActionToolbarProps) {
+export function ActionToolbar({
+  zoning,
+  result,
+  site,
+  roads,
+  floorHeights,
+  feasibility,
+}: ActionToolbarProps) {
   const handlePdf = useCallback(() => {
     if (!zoning || !result) return;
     const dirLabel = (bearing: number) => DIRECTION_LABELS[bearing] ?? `${bearing}°`;
@@ -28,8 +37,9 @@ export function ActionToolbar({ zoning, result, site, roads, floorHeights }: Act
       site?.area ?? 0,
       floorHeights,
       roads.map((r) => ({ direction: dirLabel(r.bearing), width: r.width })),
+      feasibility,
     );
-  }, [zoning, result, site, roads, floorHeights]);
+  }, [zoning, result, site, roads, floorHeights, feasibility]);
 
   return (
     <div className="flex">
