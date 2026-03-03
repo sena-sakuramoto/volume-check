@@ -34,6 +34,7 @@ export const DEMO_ZONING: ZoningData = {
     maxHoursAt10m: 2.5,
   },
   isCornerLot: false,
+  districtPlan: null,
 };
 
 export const DEMO_INPUT: VolumeInput = {

@@ -23,7 +23,13 @@ export function loadProjectFromJson(file: File): Promise<ProjectData> {
           reject(new Error('無効なプロジェクトファイルです'));
           return;
         }
-        resolve(data);
+        resolve({
+          ...data,
+          zoning: {
+            ...data.zoning,
+            districtPlan: data.zoning.districtPlan ?? null,
+          },
+        });
       } catch {
         reject(new Error('JSONの解析に失敗しました'));
       }

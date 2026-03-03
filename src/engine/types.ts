@@ -59,6 +59,26 @@ export interface HeightDistrict {
   slopeRatio?: number;
   /** Absolute max height (overrides default) */
   absoluteMax?: number;
+  /** Automatically detected from external dataset */
+  autoDetected?: boolean;
+}
+
+/** 地区計画情報（ある場合） */
+export interface DistrictPlanInfo {
+  /** 地区計画の名称 */
+  name: string;
+  /** 制限内容（テキスト） */
+  restrictions?: string;
+  /** 最高高さ制限（m）（地区計画による上乗せ） */
+  maxHeight?: number;
+  /** 最低高さ制限（m） */
+  minHeight?: number;
+  /** 壁面後退（m）（地区計画による上乗せ） */
+  wallSetback?: number;
+  /** 容積率上限（地区計画による上乗せ、0-1） */
+  floorAreaRatio?: number;
+  /** 建ぺい率上限（地区計画による上乗せ、0-1） */
+  coverageRatio?: number;
 }
 
 /** Shadow regulation parameters (日影規制) */
@@ -88,6 +108,8 @@ export interface ZoningData {
   shadowRegulation: ShadowRegulation | null;
   /** Whether the site is a corner lot (角地) */
   isCornerLot: boolean;
+  /** 地区計画（PLATEAU urf から取得、あれば） */
+  districtPlan: DistrictPlanInfo | null;
 }
 
 /** Road setback calculation parameters */

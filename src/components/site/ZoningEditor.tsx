@@ -18,6 +18,7 @@ interface ZoningEditorProps {
   onFireDistrictChange: (f: FireDistrict) => void;
   heightDistrictType: HeightDistrict['type'];
   onHeightDistrictChange: (h: HeightDistrict['type']) => void;
+  heightDistrictAutoDetected?: boolean;
   isCornerLot: boolean;
   onCornerLotChange: (v: boolean) => void;
 }
@@ -33,6 +34,7 @@ export function ZoningEditor({
   onFireDistrictChange,
   heightDistrictType,
   onHeightDistrictChange,
+  heightDistrictAutoDetected = false,
   isCornerLot,
   onCornerLotChange,
 }: ZoningEditorProps) {
@@ -135,7 +137,14 @@ export function ZoningEditor({
       {/* Height district */}
       {selectedDistrict && (
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">高度地区</label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-muted-foreground">高度地区</label>
+            {heightDistrictAutoDetected && (
+              <span className="rounded border border-emerald-700/60 bg-emerald-900/30 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                自動検出
+              </span>
+            )}
+          </div>
           <div className="flex gap-1">
             {(['指定なし', '第一種', '第二種', '第三種'] as HeightDistrict['type'][]).map((hd) => (
               <button

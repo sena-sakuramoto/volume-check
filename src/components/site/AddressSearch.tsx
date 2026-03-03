@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import type { ZoningDistrict, FireDistrict } from '@/engine/types';
+import type { ZoningDistrict, FireDistrict, HeightDistrict } from '@/engine/types';
 import { Input } from '@/components/ui/shadcn/input';
 import { Button } from '@/components/ui/shadcn/button';
 import { Loader2, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
@@ -9,6 +9,7 @@ import type { SearchStatus, SiteCallbacks } from './site-types';
 import {
   matchDistrict,
   matchFireDistrict,
+  matchHeightDistrictType,
   normalizeRatio,
   shortenDistrict,
   buildZoningData,
@@ -19,6 +20,7 @@ interface AddressSearchProps extends SiteCallbacks {
   onCoverageDetected: (v: string) => void;
   onFarDetected: (v: string) => void;
   onFireDetected: (f: FireDistrict) => void;
+  onHeightDetected?: (h: HeightDistrict['type']) => void;
 }
 
 export function AddressSearch({
@@ -30,6 +32,7 @@ export function AddressSearch({
   onCoverageDetected,
   onFarDetected,
   onFireDetected,
+  onHeightDetected,
 }: AddressSearchProps) {
   const [address, setAddress] = useState('');
   const [searchStatus, setSearchStatus] = useState<SearchStatus>({ state: 'idle' });
@@ -66,7 +69,7 @@ export function AddressSearch({
 
       setSearchStatus({ state: 'zoning-loading', address: confirmedAddress, lat, lng });
 
-      const [zoningRes, shapeRes] = await Promise.allSettled([
+      const [zoningRes, shapeRes, plateauRes] = await Promise.allSettled([
         fetch('/api/zoning-lookup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -76,6 +79,11 @@ export function AddressSearch({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lat, lng, address: confirmedAddress }),
+        }),
+        fetch('/api/plateau-urf-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng }),
         }),
       ]);
 
@@ -128,6 +136,46 @@ export function AddressSearch({
       const normalizedFAR = normalizeRatio(zoningData.floorAreaRatio);
       const matchedFire = matchFireDistrict(zoningData.fireDistrict);
 
+      let plateauHeightDistrict:
+        | {
+            type: '第一種' | '第二種' | '第三種' | '指定なし';
+            absoluteMax?: number;
+            autoDetected?: boolean;
+          }
+        | undefined;
+      let plateauDistrictPlan: {
+        name: string;
+        restrictions?: string;
+        maxHeight?: number;
+      } | null = null;
+
+      if (plateauRes.status === 'fulfilled' && plateauRes.value.ok) {
+        const plateauData: {
+          heightDistrict?: { type?: string; maxHeight?: number };
+          districtPlan?: { name: string; restrictions?: string; maxHeight?: number };
+        } = await plateauRes.value.json();
+
+        if (plateauData.heightDistrict?.type) {
+          const hdType = matchHeightDistrictType(plateauData.heightDistrict.type);
+          if (hdType) {
+            plateauHeightDistrict = {
+              type: hdType,
+              absoluteMax: plateauData.heightDistrict.maxHeight,
+              autoDetected: true,
+            };
+            onHeightDetected?.(hdType);
+          }
+        }
+
+        if (plateauData.districtPlan?.name) {
+          plateauDistrictPlan = {
+            name: plateauData.districtPlan.name,
+            restrictions: plateauData.districtPlan.restrictions,
+            maxHeight: plateauData.districtPlan.maxHeight,
+          };
+        }
+      }
+
       onDistrictDetected(matchedDistrict);
       onCoverageDetected(normalizedCoverage > 0 ? String(Math.round(normalizedCoverage * 100)) : '');
       onFarDetected(normalizedFAR > 0 ? String(Math.round(normalizedFAR * 100)) : '');
@@ -145,6 +193,8 @@ export function AddressSearch({
           coverageRatio: normalizedCoverage > 0 ? normalizedCoverage : undefined,
           floorAreaRatio: normalizedFAR > 0 ? normalizedFAR : undefined,
           fireDistrict: matchedFire,
+          heightDistrict: plateauHeightDistrict,
+          districtPlan: plateauDistrictPlan,
         }),
       );
     } catch {
@@ -160,6 +210,7 @@ export function AddressSearch({
     onCoverageDetected,
     onFarDetected,
     onFireDetected,
+    onHeightDetected,
   ]);
 
   return (

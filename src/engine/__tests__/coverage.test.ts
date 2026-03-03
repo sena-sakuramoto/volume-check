@@ -22,6 +22,7 @@ function makeZoning(overrides: Partial<ZoningData> = {}): ZoningData {
     wallSetback: 1,
     shadowRegulation: null,
     isCornerLot: false,
+    districtPlan: null,
     ...overrides,
   };
 }

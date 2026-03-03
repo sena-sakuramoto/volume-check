@@ -105,14 +105,21 @@ export default function ProjectPage() {
     if (!dist) return;
     const cov = overrides.cov ?? coverageOverride;
     const far = overrides.far ?? farOverride;
+    const nextHeightType = overrides.hd ?? zoning?.heightDistrict?.type ?? heightDistrictType;
+    const nextHeightDistrict =
+      overrides.hd === undefined && zoning?.heightDistrict?.autoDetected
+        ? zoning.heightDistrict
+        : { type: nextHeightType };
+
     setZoning(buildZoningData(dist, {
       coverageRatio: cov ? parseFloat(cov) / 100 : undefined,
       floorAreaRatio: far ? parseFloat(far) / 100 : undefined,
       fireDistrict: overrides.fire ?? fireDistrict,
-      heightDistrict: { type: overrides.hd ?? heightDistrictType },
+      heightDistrict: nextHeightDistrict,
       isCornerLot: overrides.corner ?? isCornerLot,
+      districtPlan: overrides.dist ? null : zoning?.districtPlan ?? null,
     }));
-  }, [selectedDistrict, coverageOverride, farOverride, fireDistrict, heightDistrictType, isCornerLot]);
+  }, [selectedDistrict, coverageOverride, farOverride, fireDistrict, heightDistrictType, isCornerLot, zoning]);
 
   const handleDistrictChange = useCallback((d: ZoningDistrict) => {
     setSelectedDistrict(d); rebuildZoning({ dist: d });
@@ -158,6 +165,7 @@ export default function ProjectPage() {
           fireDistrict={fireDistrict}
           onFireDistrictChange={handleFireDistrictChange}
           heightDistrictType={heightDistrictType}
+          onHeightDistrictDetected={setHeightDistrictType}
           isCornerLot={isCornerLot}
           onCornerLotChange={handleCornerLotChange}
           roadConfigs={roadConfigs}
@@ -166,6 +174,7 @@ export default function ProjectPage() {
       )}
       {resolvedActiveStep === 2 && (
         <ZoningSection
+          zoning={zoning}
           selectedDistrict={selectedDistrict}
           onDistrictChange={handleDistrictChange}
           coverageOverride={coverageOverride}

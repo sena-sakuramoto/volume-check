@@ -25,6 +25,7 @@ interface SiteSectionProps {
   fireDistrict: FireDistrict;
   onFireDistrictChange: (f: FireDistrict) => void;
   heightDistrictType: HeightDistrict['type'];
+  onHeightDistrictDetected: (h: HeightDistrict['type']) => void;
   isCornerLot: boolean;
   onCornerLotChange: (v: boolean) => void;
   roadConfigs: RoadConfig[];
@@ -46,6 +47,7 @@ export function SiteSection({
   fireDistrict,
   onFireDistrictChange,
   heightDistrictType,
+  onHeightDistrictDetected,
   isCornerLot,
   onCornerLotChange,
   roadConfigs,
@@ -110,6 +112,7 @@ export function SiteSection({
         onCoverageDetected={onCoverageChange}
         onFarDetected={onFarChange}
         onFireDetected={onFireDistrictChange}
+        onHeightDetected={onHeightDistrictDetected}
       />
 
       <FileUpload
