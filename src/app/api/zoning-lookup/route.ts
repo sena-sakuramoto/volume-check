@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Pbf from 'pbf';
-import { VectorTile } from '@mapbox/vector-tile';
+import {
+  fetchMvtTile,
+  latLngToPixel,
+  latLngToTile,
+  pointInFeatureGeometry,
+} from '@/lib/mvt-utils';
 
 /**
  * Look up zoning data for a given lat/lng by fetching a PBF vector tile
@@ -14,113 +18,6 @@ import { VectorTile } from '@mapbox/vector-tile';
 const TILE_URL_TEMPLATE =
   'https://du6jhqfvlioa4.cloudfront.net/ex-api/external/XKT002/{z}/{x}/{y}.pbf';
 
-// ---------------------------------------------------------------------------
-// Tile coordinate helpers
-// ---------------------------------------------------------------------------
-
-function latLngToTile(lat: number, lng: number, z: number) {
-  const n = Math.pow(2, z);
-  const tileX = Math.floor(((lng + 180) / 360) * n);
-  const latRad = (lat * Math.PI) / 180;
-  const tileY = Math.floor(
-    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n
-  );
-  return { tileX, tileY };
-}
-
-function latLngToPixel(
-  lat: number,
-  lng: number,
-  z: number,
-  tileX: number,
-  tileY: number,
-  extent: number
-) {
-  const n = Math.pow(2, z);
-  const latRad = (lat * Math.PI) / 180;
-  const pixelX = ((lng + 180) / 360 * n - tileX) * extent;
-  const pixelY =
-    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n - tileY) *
-    extent;
-  return { pixelX, pixelY };
-}
-// ---------------------------------------------------------------------------
-// Ray-casting point-in-polygon
-// ---------------------------------------------------------------------------
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-function pointInPolygon(px: number, py: number, ring: Point[]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i].x;
-    const yi = ring[i].y;
-    const xj = ring[j].x;
-    const yj = ring[j].y;
-
-    const intersect =
-      yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-/**
- * Check if a point is inside a feature geometry (handles Polygon and
- * MultiPolygon by testing outer rings and subtracting inner rings).
- */
-function pointInFeatureGeometry(
-  px: number,
-  py: number,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  feature: any
-): boolean {
-  const geomType = feature.type;
-  const geometry: Point[][] = feature.loadGeometry();
-
-  if (geomType === 3) {
-    let insideOuter = false;
-    let insideHole = false;
-
-    for (const ring of geometry) {
-      const area = signedArea(ring);
-      if (area > 0) {
-        if (insideOuter && !insideHole) return true;
-        insideOuter = pointInPolygon(px, py, ring);
-        insideHole = false;
-      } else {
-        if (insideOuter && pointInPolygon(px, py, ring)) {
-          insideHole = true;
-        }
-      }
-    }
-
-    return insideOuter && !insideHole;
-  }
-
-  if (geomType === 1) {
-    for (const ring of geometry) {
-      for (const pt of ring) {
-        const dx = pt.x - px;
-        const dy = pt.y - py;
-        if (dx * dx + dy * dy < 100) return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-function signedArea(ring: Point[]): number {
-  let sum = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    sum += (ring[j].x - ring[i].x) * (ring[i].y + ring[j].y);
-  }
-  return sum;
-}
 // ---------------------------------------------------------------------------
 // Property extraction helpers
 // ---------------------------------------------------------------------------
@@ -296,33 +193,11 @@ async function tryFetchZoning(
 
   if (DEBUG) console.log(`[zoning-lookup] Fetching tile z=${z} x=${tileX} y=${tileY}: ${url}`);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15_000);
-
-  let response: Response;
-  try {
-    response = await fetch(url, { signal: controller.signal });
-  } catch (fetchError) {
-    clearTimeout(timeoutId);
-    if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
-      console.warn(`[zoning-lookup] Tile fetch timed out after 15s: ${url}`);
-      return null;
-    }
-    throw fetchError;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  if (!response.ok) {
-    console.warn(
-      `[zoning-lookup] Tile fetch failed: ${response.status} ${response.statusText}`
-    );
+  const tile = await fetchMvtTile(TILE_URL_TEMPLATE, z, tileX, tileY);
+  if (!tile) {
+    if (DEBUG) console.warn('[zoning-lookup] Failed to fetch/parse tile');
     return null;
   }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const pbf = new Pbf(new Uint8Array(arrayBuffer));
-  const tile = new VectorTile(pbf);
 
   const layerNames = Object.keys(tile.layers);
   if (DEBUG) console.log(`[zoning-lookup] Available layers: ${layerNames.join(', ')}`);
