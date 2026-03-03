@@ -43,6 +43,7 @@ export const ZoningDataSchema = z.object({
     maxHeightAtBoundary: z.number().positive().optional(),
     slopeRatio: z.number().positive().optional(),
     absoluteMax: z.number().positive().optional(),
+    autoDetected: z.boolean().optional(),
   }),
   coverageRatio: z.number().min(0).max(1),
   floorAreaRatio: z.number().positive(),
@@ -56,6 +57,19 @@ export const ZoningDataSchema = z.object({
     })
     .nullable(),
   isCornerLot: z.boolean(),
+  districtPlan: z
+    .object({
+      name: z.string().min(1),
+      restrictions: z.string().optional(),
+      maxHeight: z.number().positive().optional(),
+      minHeight: z.number().positive().optional(),
+      wallSetback: z.number().min(0).optional(),
+      floorAreaRatio: z.number().min(0).max(1).optional(),
+      coverageRatio: z.number().min(0).max(1).optional(),
+    })
+    .nullable()
+    .optional()
+    .default(null),
 });
 
 export const SiteBoundarySchema = z.object({

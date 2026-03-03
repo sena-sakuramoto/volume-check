@@ -21,6 +21,7 @@ const zoning: ZoningData = {
   wallSetback: 1,
   shadowRegulation: { measurementHeight: 1.5, maxHoursAt5m: 4, maxHoursAt10m: 2.5 },
   isCornerLot: false,
+  districtPlan: null,
 };
 
 const road: Road = {
@@ -198,6 +199,7 @@ describe('generateEnvelope with different configurations', () => {
       wallSetback: null,
       shadowRegulation: null,
       isCornerLot: false,
+      districtPlan: null,
     };
     const inputCommercial: VolumeInput = {
       site,
@@ -229,5 +231,22 @@ describe('generateEnvelope with different configurations', () => {
     const resultMulti = generateEnvelope(inputMultiRoad);
     expect(resultMulti.envelopeVertices.length).toBeGreaterThan(0);
     expect(resultMulti.maxHeight).toBeGreaterThan(0);
+  });
+
+  it('applies district plan maxHeight when it is stricter than absolute limit', () => {
+    const zoningWithDistrictPlan: ZoningData = {
+      ...zoning,
+      absoluteHeightLimit: 20,
+      districtPlan: {
+        name: 'テスト地区計画',
+        maxHeight: 8,
+      },
+    };
+    const inputWithDistrictPlan: VolumeInput = {
+      ...input,
+      zoning: zoningWithDistrictPlan,
+    };
+    const resultWithDistrictPlan = generateEnvelope(inputWithDistrictPlan);
+    expect(resultWithDistrictPlan.maxHeight).toBeLessThanOrEqual(8);
   });
 });

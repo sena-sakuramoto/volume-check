@@ -220,6 +220,7 @@ describe('buildingPatterns is null when no shadow regulation', () => {
       wallSetback: null,
       shadowRegulation: null,
       isCornerLot: false,
+      districtPlan: null,
     };
     const input: VolumeInput = {
       site: DEMO_SITE,

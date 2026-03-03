@@ -5,6 +5,7 @@ import type {
   ZoningDistrict,
   FireDistrict,
   HeightDistrict,
+  DistrictPlanInfo,
   Point2D,
 } from '@/engine/types';
 import { getZoningDefaults } from '@/engine';
@@ -149,6 +150,7 @@ export function buildZoningData(
     fireDistrict?: FireDistrict;
     heightDistrict?: HeightDistrict;
     isCornerLot?: boolean;
+    districtPlan?: DistrictPlanInfo | null;
   },
 ): ZoningData {
   const defaults = getZoningDefaults(district);
@@ -162,6 +164,7 @@ export function buildZoningData(
     wallSetback: defaults.wallSetback,
     shadowRegulation: defaults.shadowRegulation,
     isCornerLot: overrides?.isCornerLot ?? false,
+    districtPlan: overrides?.districtPlan ?? null,
   };
 }
 
@@ -262,6 +265,16 @@ export function matchFireDistrict(raw: string): FireDistrict {
   if (raw.includes('準防火')) return '準防火地域';
   if (raw.includes('防火')) return '防火地域';
   return '指定なし';
+}
+
+export function matchHeightDistrictType(
+  raw: string,
+): '第一種' | '第二種' | '第三種' | '指定なし' | null {
+  if (!raw) return null;
+  if (raw.includes('第一種') || raw.includes('1種') || raw.includes('第1種')) return '第一種';
+  if (raw.includes('第二種') || raw.includes('2種') || raw.includes('第2種')) return '第二種';
+  if (raw.includes('第三種') || raw.includes('3種') || raw.includes('第3種')) return '第三種';
+  return null;
 }
 
 export function shortenDistrict(d: ZoningDistrict): string {

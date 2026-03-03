@@ -35,7 +35,14 @@ export function loadProject(): ProjectData | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as ProjectData;
+    const parsed = JSON.parse(raw) as ProjectData;
+    return {
+      ...parsed,
+      zoning: {
+        ...parsed.zoning,
+        districtPlan: parsed.zoning.districtPlan ?? null,
+      },
+    };
   } catch {
     console.error('プロジェクトの読み込みに失敗しました。');
     return null;

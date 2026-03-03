@@ -11,6 +11,7 @@ const validZoning: ZoningData = {
   wallSetback: 1,
   shadowRegulation: { measurementHeight: 1.5, maxHoursAt5m: 4, maxHoursAt10m: 2.5 },
   isCornerLot: false,
+  districtPlan: null,
 };
 
 const validRoad: Road = {

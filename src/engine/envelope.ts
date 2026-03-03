@@ -35,6 +35,12 @@ const FLOOR_HEIGHT = 3.0;
 /** Threshold for classifying an edge as roughly horizontal (for north detection) */
 const HORIZONTAL_THRESHOLD = 0.3; // radians (~17 degrees)
 
+function getEffectiveAbsoluteHeightLimit(input: VolumeInput): number {
+  const baseLimit = getAbsoluteHeightLimit(input.zoning.absoluteHeightLimit);
+  const districtPlanLimit = input.zoning.districtPlan?.maxHeight ?? Infinity;
+  return Math.min(baseLimit, districtPlanLimit, MAX_HEIGHT_CAP);
+}
+
 function signedArea(vertices: Point2D[]): number {
   let area = 0;
   const n = vertices.length;
@@ -274,7 +280,7 @@ function buildHeightField(
   const roadParams = getRoadSetbackParams(zoning.district);
   const adjParams = getAdjacentSetbackParams(zoning.district);
   const northParams = getNorthSetbackParams(zoning.district);
-  const absLimit = Math.min(getAbsoluteHeightLimit(zoning.absoluteHeightLimit), MAX_HEIGHT_CAP);
+  const absLimit = getEffectiveAbsoluteHeightLimit(input);
 
   // Bounding box of buildable polygon
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -719,7 +725,7 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     }
   }
   // Apply absolute height limit cap
-  const absLimit = Math.min(getAbsoluteHeightLimit(zoning.absoluteHeightLimit), MAX_HEIGHT_CAP);
+  const absLimit = getEffectiveAbsoluteHeightLimit(input);
   if (maxHeight > absLimit) maxHeight = absLimit;
 
   // Calculate maxFloors from user-provided floor heights or default
