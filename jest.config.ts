@@ -8,6 +8,9 @@ const config: Config = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   testMatch: ['**/__tests__/**/*.test.ts'],
+  forceExit: true,
+  testTimeout: 60000,
+  maxWorkers: 1,
 };
 
 export default config;
