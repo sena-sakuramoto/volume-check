@@ -1,4 +1,11 @@
 import type { ZoningData, VolumeResult } from '@/engine/types';
+import type { FeasibilityResult, UseType } from '@/engine/feasibility';
+
+interface FeasibilityExportData {
+  useType: UseType;
+  landCost: number;
+  result: FeasibilityResult;
+}
 
 /**
  * ボリュームチェック概算結果をPDF印刷用のHTMLとして新しいウィンドウに表示し、
@@ -9,10 +16,13 @@ export function generatePdfReport(
   result: VolumeResult,
   siteArea: number,
   floorHeights: number[],
-  roads: { direction: string; width: number }[]
+  roads: { direction: string; width: number }[],
+  feasibility?: FeasibilityExportData | null,
 ): void {
   const now = new Date();
   const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+  const fmtMan = (value: number): string => value.toLocaleString('ja-JP', { maximumFractionDigits: 0 });
+  const fmtOku = (value: number): string => `${(value / 10000).toFixed(2)} 億円`;
 
   // 階別面積表の行を生成
   let cumulativeHeight = 0;
@@ -38,6 +48,61 @@ export function generatePdfReport(
         </tr>`
     )
     .join('');
+
+  const feasibilityRows = feasibility
+    ? `
+      <tr>
+        <th>想定用途</th>
+        <td>${feasibility.useType}</td>
+      </tr>
+      <tr>
+        <th>延床面積</th>
+        <td>${feasibility.result.totalFloorAreaTsubo.toFixed(1)} 坪</td>
+      </tr>
+      <tr>
+        <th>概算建設費</th>
+        <td>${fmtOku(feasibility.result.constructionCost)} (${fmtMan(feasibility.result.constructionCost)} 万円)</td>
+      </tr>
+      <tr>
+        <th>土地取得費</th>
+        <td>${fmtOku(feasibility.landCost)} (${fmtMan(feasibility.landCost)} 万円)</td>
+      </tr>
+      <tr>
+        <th>総事業費</th>
+        <td>${fmtOku(feasibility.result.totalProjectCost)} (${fmtMan(feasibility.result.totalProjectCost)} 万円)</td>
+      </tr>
+      ${
+        feasibility.result.annualRentalIncome !== null
+          ? `
+      <tr>
+        <th>年間賃料収入</th>
+        <td>${fmtOku(feasibility.result.annualRentalIncome)} (${fmtMan(feasibility.result.annualRentalIncome)} 万円)</td>
+      </tr>
+      <tr>
+        <th>表面利回り</th>
+        <td>${feasibility.result.grossYield?.toFixed(1) ?? '-'}%</td>
+      </tr>`
+          : ''
+      }
+      ${
+        feasibility.result.totalSaleRevenue !== null
+          ? `
+      <tr>
+        <th>販売総額</th>
+        <td>${fmtOku(feasibility.result.totalSaleRevenue)} (${fmtMan(feasibility.result.totalSaleRevenue)} 万円)</td>
+      </tr>
+      <tr>
+        <th>事業収支</th>
+        <td>${fmtOku(feasibility.result.profitLoss ?? 0)} (${fmtMan(feasibility.result.profitLoss ?? 0)} 万円)</td>
+      </tr>
+      <tr>
+        <th>利益率</th>
+        <td>${feasibility.result.profitMargin?.toFixed(1) ?? '-'}%</td>
+      </tr>`
+          : ''
+      }
+    `
+    : '';
 
   const html = `<!DOCTYPE html>
 <html lang="ja">
@@ -262,6 +327,18 @@ export function generatePdfReport(
       <tbody>
         ${floorRows}
       </tbody>
+    </table>
+  </div>`
+      : ''
+  }
+
+  ${
+    feasibility
+      ? `
+  <div class="section">
+    <div class="section-title">5. 事業性概算</div>
+    <table>
+      ${feasibilityRows}
     </table>
   </div>`
       : ''

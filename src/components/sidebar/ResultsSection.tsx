@@ -6,6 +6,10 @@ import { getRoadSetbackParams, getAdjacentSetbackParams, getNorthSetbackParams }
 import { MAX_HEIGHT_CAP } from '@/engine/constants';
 import { HeroMetrics } from '@/components/results/HeroMetrics';
 import { PatternComparison } from '@/components/results/PatternComparison';
+import {
+  FeasibilitySection,
+  type FeasibilitySnapshot,
+} from '@/components/results/FeasibilitySection';
 import { FloorTable } from '@/components/results/FloorTable';
 import { ActionToolbar } from '@/components/results/ActionToolbar';
 import { FloorEditor } from '@/components/ui/FloorEditor';
@@ -50,6 +54,7 @@ export function ResultsSection({
   onFloorHeightsChange,
 }: ResultsSectionProps) {
   const [landPriceInput, setLandPriceInput] = useState('');
+  const [feasibilitySnapshot, setFeasibilitySnapshot] = useState<FeasibilitySnapshot | null>(null);
   const landPrice = parseFloat(landPriceInput);
   const floorAreaTsubo = result ? result.maxFloorArea / 3.30579 : 0;
   const ichishuUnitPrice =
@@ -154,6 +159,13 @@ export function ResultsSection({
       )}
 
       {/* Pattern Comparison */}
+      {result && (
+        <FeasibilitySection
+          totalFloorArea={result.maxFloorArea}
+          onSnapshotChange={setFeasibilitySnapshot}
+        />
+      )}
+
       {result?.buildingPatterns && (
         <PatternComparison patterns={result.buildingPatterns} />
       )}
@@ -197,6 +209,7 @@ export function ResultsSection({
         site={site}
         roads={roads}
         floorHeights={floorHeights}
+        feasibility={feasibilitySnapshot}
       />
     </div>
   );
