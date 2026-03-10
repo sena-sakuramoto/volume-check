@@ -1,5 +1,7 @@
 # CODEX_PLATEAU_URF: PLATEAU urf連携（高度地区・地区計画・防火地域）
 
+> **Session Handoff:** 作業前に必ず `docs/handover/VOLUMECHECK_MASTER_HANDOVER.md` を読み、起動URL・既知不具合・復旧手順を引き継ぐこと。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** PLATEAU の都市計画決定情報 MVT タイルから高度地区・地区計画・防火地域を自動取得し、計算エンジンに反映する

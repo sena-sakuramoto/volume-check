@@ -12,6 +12,27 @@ import { getZoningDefaults } from '@/engine';
 import type { RoadDirection, RoadConfig } from './site-types';
 import { ROAD_DIRECTION_OPTIONS, ALL_DISTRICTS } from './site-types';
 
+function pickRoadSlopeFields(config?: Partial<RoadConfig>): Pick<
+  Road,
+  | 'frontSetback'
+  | 'oppositeSideSetback'
+  | 'oppositeOpenSpace'
+  | 'oppositeOpenSpaceKind'
+  | 'slopeWidthOverride'
+  | 'siteHeightAboveRoad'
+  | 'enableTwoA35m'
+> {
+  return {
+    frontSetback: config?.frontSetback,
+    oppositeSideSetback: config?.oppositeSideSetback,
+    oppositeOpenSpace: config?.oppositeOpenSpace,
+    oppositeOpenSpaceKind: config?.oppositeOpenSpaceKind,
+    slopeWidthOverride: config?.slopeWidthOverride,
+    siteHeightAboveRoad: config?.siteHeightAboveRoad,
+    enableTwoA35m: config?.enableTwoA35m,
+  };
+}
+
 /** Shoelace formula for polygon area */
 export function calcPolygonArea(verts: { x: number; y: number }[]): number {
   let area = 0;
@@ -49,24 +70,34 @@ export function buildRoadFromEdge(
   roadWidth: number,
   edgeIndices?: [number, number],
   direction?: string,
+  config?: Partial<RoadConfig>,
 ): Road {
   const edgeCount = vertices.length;
   const pickEdgeByDirection = (dir: string): [number, number] | null => {
     if (edgeCount < 2) return null;
-    const dirMap: Record<string, number> = { south: 180, north: 0, east: 90, west: 270 };
-    const target = dirMap[dir];
-    if (target === undefined) return null;
-
-    const isCCW = calcSignedArea(vertices) > 0;
     let bestIdx = 0;
-    let bestGap = Infinity;
+    let bestScore = dir === 'south' || dir === 'west' ? Infinity : -Infinity;
 
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
-      const b = outwardBearing(vertices[i], vertices[j], isCCW);
-      const gap = circularBearingGap(target, b);
-      if (gap < bestGap) {
-        bestGap = gap;
+      const midX = (vertices[i].x + vertices[j].x) / 2;
+      const midY = (vertices[i].y + vertices[j].y) / 2;
+      const score =
+        dir === 'south' ? midY :
+        dir === 'north' ? midY :
+        dir === 'east' ? midX :
+        dir === 'west' ? midX :
+        Number.NaN;
+
+      if (Number.isNaN(score)) return null;
+
+      const isBetter =
+        (dir === 'south' || dir === 'west')
+          ? score < bestScore
+          : score > bestScore;
+
+      if (isBetter) {
+        bestScore = score;
         bestIdx = i;
       }
     }
@@ -75,15 +106,18 @@ export function buildRoadFromEdge(
   };
 
   const fallbackEdge: [number, number] = edgeCount >= 2 ? [0, 1] : [0, 0];
-  const resolvedEdge =
-    (edgeIndices &&
-      edgeCount > 0 &&
-      edgeIndices[0] >= 0 &&
-      edgeIndices[0] < edgeCount &&
-      edgeIndices[1] >= 0 &&
-      edgeIndices[1] < edgeCount
+  const explicitEdge =
+    edgeIndices &&
+    edgeCount > 0 &&
+    edgeIndices[0] >= 0 &&
+    edgeIndices[0] < edgeCount &&
+    edgeIndices[1] >= 0 &&
+    edgeIndices[1] < edgeCount
       ? edgeIndices
-      : null) ??
+      : null;
+
+  const resolvedEdge =
+    explicitEdge ??
     (direction ? pickEdgeByDirection(direction) : null) ??
     fallbackEdge;
 
@@ -92,16 +126,22 @@ export function buildRoadFromEdge(
   const edgeStart = vertices[startIdx] ?? vertices[0] ?? { x: 0, y: 0 };
   const edgeEnd = vertices[endIdx] ?? vertices[1] ?? edgeStart;
 
-  let bearing = 180;
-  if (direction) {
+  const isCCW = calcSignedArea(vertices) > 0;
+  let bearing = outwardBearing(edgeStart, edgeEnd, isCCW);
+
+  if (!explicitEdge && direction) {
     const dirMap: Record<string, number> = { south: 180, north: 0, east: 90, west: 270 };
     bearing = dirMap[direction] ?? 180;
-  } else {
-    const isCCW = calcSignedArea(vertices) > 0;
-    bearing = outwardBearing(edgeStart, edgeEnd, isCCW);
   }
 
-  return { edgeStart, edgeEnd, width: roadWidth, centerOffset: roadWidth / 2, bearing };
+  return {
+    edgeStart,
+    edgeEnd,
+    width: roadWidth,
+    centerOffset: roadWidth / 2,
+    bearing,
+    ...pickRoadSlopeFields(config),
+  };
 }
 
 export function buildRoad(
@@ -109,6 +149,7 @@ export function buildRoad(
   depth: number,
   roadWidth: number,
   direction: RoadDirection,
+  config?: Partial<RoadConfig>,
 ): Road {
   const dirInfo = ROAD_DIRECTION_OPTIONS.find((d) => d.key === direction)!;
   let edgeStart: { x: number; y: number };
@@ -139,6 +180,7 @@ export function buildRoad(
     width: roadWidth,
     centerOffset: roadWidth / 2,
     bearing: dirInfo.bearing,
+    ...pickRoadSlopeFields(config),
   };
 }
 
@@ -287,7 +329,87 @@ export function buildRoadsFromConfigs(
   siteDepth: number,
   configs: RoadConfig[],
 ): Road[] {
-  return configs.map((rc) => buildRoad(siteWidth, siteDepth, rc.width, rc.direction));
+  return configs.map((rc) => buildRoad(siteWidth, siteDepth, rc.width, rc.direction, rc));
+}
+
+export function buildRoadsFromPolygonConfigs(
+  vertices: Point2D[],
+  configs: RoadConfig[],
+): Road[] {
+  const edgeCount = vertices.length;
+  if (edgeCount < 2) {
+    return configs.map((rc) =>
+      buildRoadFromEdge(vertices, rc.width, rc.edgeVertexIndices, rc.direction, rc),
+    );
+  }
+
+  const usedEdgeIds = new Set<number>();
+
+  return configs.map((rc) => {
+    const explicitEdgeId = rc.edgeVertexIndices
+      ? toBoundaryEdgeId(rc.edgeVertexIndices, edgeCount)
+      : null;
+
+    let resolvedEdge: [number, number];
+    if (explicitEdgeId !== null && !usedEdgeIds.has(explicitEdgeId)) {
+      resolvedEdge = rc.edgeVertexIndices!;
+      usedEdgeIds.add(explicitEdgeId);
+    } else {
+      const rankedIds = rankBoundaryEdgesByDirection(vertices, rc.direction);
+      const candidateId = rankedIds.find((id) => !usedEdgeIds.has(id))
+        ?? (explicitEdgeId ?? rankedIds[0] ?? 0);
+      usedEdgeIds.add(candidateId);
+      resolvedEdge = [candidateId, (candidateId + 1) % edgeCount];
+    }
+
+    return buildRoadFromEdge(vertices, rc.width, resolvedEdge, rc.direction, rc);
+  });
+}
+
+function toBoundaryEdgeId(pair: [number, number], edgeCount: number): number | null {
+  const [a, b] = pair;
+  if (
+    !Number.isInteger(a) ||
+    !Number.isInteger(b) ||
+    a < 0 ||
+    b < 0 ||
+    a >= edgeCount ||
+    b >= edgeCount
+  ) {
+    return null;
+  }
+  if (b === (a + 1) % edgeCount) return a;
+  if (a === (b + 1) % edgeCount) return b;
+  return null;
+}
+
+function rankBoundaryEdgesByDirection(vertices: Point2D[], direction: string): number[] {
+  const edgeCount = vertices.length;
+  const desc = direction === 'north' || direction === 'east';
+  const byX = direction === 'east' || direction === 'west';
+
+  const ranked = Array.from({ length: edgeCount }, (_, i) => {
+    const j = (i + 1) % edgeCount;
+    const start = vertices[i];
+    const end = vertices[j];
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+    const score = byX ? midX : midY;
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    return { id: i, score, length };
+  });
+
+  ranked.sort((a, b) => {
+    if (Math.abs(a.score - b.score) > 1e-9) {
+      return desc ? b.score - a.score : a.score - b.score;
+    }
+    if (Math.abs(a.length - b.length) > 1e-9) {
+      return b.length - a.length;
+    }
+    return a.id - b.id;
+  });
+
+  return ranked.map((r) => r.id);
 }
 
 function calcSignedArea(vertices: Point2D[]): number {
@@ -309,8 +431,4 @@ function outwardBearing(a: Point2D, b: Point2D, isCCW: boolean): number {
   const ny = isCCW ? dx : -dx;
   const bearing = (Math.atan2(nx, ny) * 180) / Math.PI;
   return ((bearing % 360) + 360) % 360;
-}
-
-function circularBearingGap(a: number, b: number): number {
-  return Math.abs((((a - b) % 360) + 540) % 360 - 180);
 }

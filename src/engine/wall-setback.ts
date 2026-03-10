@@ -1,6 +1,102 @@
 import type { Point2D } from './types';
 import { segmentsIntersectionPoint, polygonArea, isSimplePolygon } from './geometry';
 
+function signedArea(vertices: Point2D[]): number {
+  let area = 0;
+  const n = vertices.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += vertices[i].x * vertices[j].y - vertices[j].x * vertices[i].y;
+  }
+  return area / 2;
+}
+
+interface OffsetLine {
+  point: Point2D;
+  direction: Point2D;
+}
+
+function lineIntersection(a: OffsetLine, b: OffsetLine): Point2D | null {
+  const det = a.direction.x * b.direction.y - a.direction.y * b.direction.x;
+  if (Math.abs(det) < 1e-10) return null;
+
+  const dx = b.point.x - a.point.x;
+  const dy = b.point.y - a.point.y;
+  const t = (dx * b.direction.y - dy * b.direction.x) / det;
+  return {
+    x: a.point.x + a.direction.x * t,
+    y: a.point.y + a.direction.y * t,
+  };
+}
+
+function inwardNormal(a: Point2D, b: Point2D, isCCW: boolean): Point2D {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 1e-10) return { x: 0, y: 0 };
+  return isCCW
+    ? { x: -dy / len, y: dx / len }
+    : { x: dy / len, y: -dx / len };
+}
+
+function buildOffsetLine(
+  a: Point2D,
+  b: Point2D,
+  setback: number,
+  isCCW: boolean,
+): OffsetLine {
+  const normal = inwardNormal(a, b, isCCW);
+  return {
+    point: {
+      x: a.x + normal.x * setback,
+      y: a.y + normal.y * setback,
+    },
+    direction: {
+      x: b.x - a.x,
+      y: b.y - a.y,
+    },
+  };
+}
+
+export function applyEdgeSetbacks(vertices: Point2D[], setbacks: number[]): Point2D[] {
+  if (vertices.length < 3 || setbacks.length !== vertices.length) return vertices;
+  if (setbacks.every((setback) => Math.abs(setback) < 1e-9)) return vertices;
+
+  const n = vertices.length;
+  const isCCW = signedArea(vertices) > 0;
+  const result: Point2D[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const prev = vertices[(i - 1 + n) % n];
+    const curr = vertices[i];
+    const next = vertices[(i + 1) % n];
+    const prevSetback = Math.max(0, setbacks[(i - 1 + n) % n] ?? 0);
+    const nextSetback = Math.max(0, setbacks[i] ?? 0);
+
+    const prevLine = buildOffsetLine(prev, curr, prevSetback, isCCW);
+    const nextLine = buildOffsetLine(curr, next, nextSetback, isCCW);
+    const intersection = lineIntersection(prevLine, nextLine);
+
+    if (intersection) {
+      result.push(intersection);
+      continue;
+    }
+
+    const prevNormal = inwardNormal(prev, curr, isCCW);
+    const nextNormal = inwardNormal(curr, next, isCCW);
+    result.push({
+      x: curr.x + prevNormal.x * prevSetback + nextNormal.x * nextSetback,
+      y: curr.y + prevNormal.y * prevSetback + nextNormal.y * nextSetback,
+    });
+  }
+
+  if (!isSimplePolygon(result)) {
+    return resolveSelfintersection(result);
+  }
+
+  return result;
+}
+
 /**
  * Inset a polygon by a given distance for wall setback (外壁後退).
  * Uses bisector-based offset for each vertex.
@@ -16,50 +112,7 @@ import { segmentsIntersectionPoint, polygonArea, isSimplePolygon } from './geome
  */
 export function applyWallSetback(vertices: Point2D[], setback: number | null): Point2D[] {
   if (setback === null || setback === 0) return vertices;
-
-  const n = vertices.length;
-  const result: Point2D[] = [];
-
-  for (let i = 0; i < n; i++) {
-    const prev = vertices[(i - 1 + n) % n];
-    const curr = vertices[i];
-    const next = vertices[(i + 1) % n];
-
-    // Edge vectors
-    const e1 = { x: curr.x - prev.x, y: curr.y - prev.y };
-    const e2 = { x: next.x - curr.x, y: next.y - curr.y };
-
-    // Inward normals (for clockwise winding, inward = left-hand normal)
-    const n1 = normalize({ x: -e1.y, y: e1.x });
-    const n2 = normalize({ x: -e2.y, y: e2.x });
-
-    // Bisector of the two inward normals
-    const bisector = { x: n1.x + n2.x, y: n1.y + n2.y };
-    const bisectorLen = Math.sqrt(bisector.x ** 2 + bisector.y ** 2);
-
-    if (bisectorLen < 1e-10) {
-      // Normals are opposite (180-degree turn) - offset along one normal
-      result.push({
-        x: curr.x + n1.x * setback,
-        y: curr.y + n1.y * setback,
-      });
-    } else {
-      // Project the setback distance onto the bisector direction
-      const dot = n1.x * (bisector.x / bisectorLen) + n1.y * (bisector.y / bisectorLen);
-      const offset = setback / dot;
-      result.push({
-        x: curr.x + (bisector.x / bisectorLen) * offset,
-        y: curr.y + (bisector.y / bisectorLen) * offset,
-      });
-    }
-  }
-
-  // Check for self-intersection and resolve if needed
-  if (!isSimplePolygon(result)) {
-    return resolveSelfintersection(result);
-  }
-
-  return result;
+  return applyEdgeSetbacks(vertices, Array(vertices.length).fill(setback));
 }
 
 /**
@@ -217,8 +270,3 @@ function parameterOnSegment(a: Point2D, b: Point2D, p: Point2D): number {
   return ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
 }
 
-/** Normalize a 2D vector to unit length */
-function normalize(v: Point2D): Point2D {
-  const len = Math.sqrt(v.x ** 2 + v.y ** 2);
-  return { x: v.x / len, y: v.y / len };
-}

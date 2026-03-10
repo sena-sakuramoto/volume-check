@@ -17,6 +17,15 @@ export const RoadSchema = z.object({
   width: z.number().positive('道路幅員は正の値が必要です'),
   centerOffset: z.number().finite(),
   bearing: z.number().min(0).max(360),
+  frontSetback: z.number().min(0).optional(),
+  oppositeSideSetback: z.number().min(0).optional(),
+  oppositeOpenSpace: z.number().min(0).optional(),
+  oppositeOpenSpaceKind: z
+    .enum(['none', 'alley', 'waterway', 'river', 'railway', 'park', 'plaza'])
+    .optional(),
+  slopeWidthOverride: z.number().positive().optional(),
+  siteHeightAboveRoad: z.number().finite().optional(),
+  enableTwoA35m: z.boolean().optional(),
 });
 
 const ZoningDistrictValues = [

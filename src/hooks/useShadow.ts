@@ -23,7 +23,7 @@ export function useShadow({ shadowTimeValue, volumeResult, site, zoning, latitud
     try {
       const maskResult = getShadowMaskAtTime(
         volumeResult.heightFieldData,
-        site.vertices,
+        volumeResult.shadowBoundary ?? site.vertices,
         zoning.shadowRegulation.measurementHeight,
         latitude,
         0,

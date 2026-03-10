@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { fetchMvtTile, latLngToPixel, latLngToTile, pointInFeatureGeometry } from '@/lib/mvt-utils';
+import { parseRequestLatLng } from '@/lib/coordinate-parser';
 
 const TILE_URLS = {
   heightControl:
@@ -25,6 +26,10 @@ interface PlateauUrfResult {
     name: string;
     restrictions?: string;
     maxHeight?: number;
+    minHeight?: number;
+    wallSetback?: number;
+    floorAreaRatio?: number;
+    coverageRatio?: number;
     attributes?: Record<string, unknown>;
   } | null;
   useDistrict: {
@@ -54,6 +59,12 @@ function asNumber(value: unknown): number | undefined {
     if (Number.isFinite(n)) return n;
   }
   return undefined;
+}
+
+function asRatio(value: unknown): number | undefined {
+  const num = asNumber(value);
+  if (num === undefined) return undefined;
+  return num > 1 ? num / 100 : num;
 }
 
 function asString(value: unknown): string | undefined {
@@ -92,11 +103,12 @@ async function queryTileAtPoint(
 
 export async function POST(req: NextRequest) {
   try {
-    const { lat, lng } = (await req.json()) as { lat: unknown; lng: unknown };
-
-    if (typeof lat !== 'number' || typeof lng !== 'number') {
-      return NextResponse.json({ error: 'lat, lng が必要です' }, { status: 400 });
+    const body = (await req.json()) as { lat: unknown; lng: unknown };
+    const parsed = parseRequestLatLng(body);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
+    const { lat, lng } = parsed;
 
     const z = 14;
     const [heightResult, fireResult, useResult] = await Promise.allSettled([
@@ -180,6 +192,20 @@ export async function POST(req: NextRequest) {
           maxHeight:
             asNumber(districtPlanAttrs.maximumBuildingHeight) ??
             asNumber(districtPlanAttrs.maxHeight),
+          minHeight:
+            asNumber(districtPlanAttrs.minimumBuildingHeight) ??
+            asNumber(districtPlanAttrs.minHeight) ??
+            asNumber(districtPlanAttrs.minimumHeight),
+          wallSetback:
+            asNumber(districtPlanAttrs.wallSetback) ??
+            asNumber(districtPlanAttrs.wallPositionRestriction) ??
+            asNumber(districtPlanAttrs.setbackDistance),
+          floorAreaRatio:
+            asRatio(districtPlanAttrs.floorAreaRatio) ??
+            asRatio(districtPlanAttrs.floor_area_ratio),
+          coverageRatio:
+            asRatio(districtPlanAttrs.buildingCoverageRatio) ??
+            asRatio(districtPlanAttrs.coverageRatio),
           attributes: districtPlanAttrs,
         };
       }
@@ -194,3 +220,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

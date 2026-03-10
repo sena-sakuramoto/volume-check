@@ -63,6 +63,7 @@ const EXTRACTION_PROMPT = `あなたは建築士向けの敷地分析AIです。
 ━━━━━━━━━━━━━━━━━━━━
 {
   "type": "survey" | "summary" | "unknown",
+  "address": "読み取れた住所（番地まで）" | null,
   "site": {
     "vertices": [
       {"x": 0, "y": 0},
@@ -77,7 +78,10 @@ const EXTRACTION_PROMPT = `あなたは建築士向けの敷地分析AIです。
     {
       "direction": "south" | "north" | "east" | "west",
       "width": 道路幅員(m),
-      "edgeVertexIndices": [始点index, 終点index]
+      "edgeVertexIndices": [始点index, 終点index],
+      "confidence": "high" | "medium" | "low",
+      "reasoning": "道路として判断した根拠",
+      "sourceDetail": "図中の記載やラベル"
     }
   ],
   "zoning": {
@@ -85,6 +89,10 @@ const EXTRACTION_PROMPT = `あなたは建築士向けの敷地分析AIです。
     "coverageRatio": 建ぺい率(0-1) | null,
     "floorAreaRatio": 容積率(0-1) | null,
     "fireDistrict": "防火地域" | "準防火地域" | "指定なし" | null
+  },
+  "surroundings": {
+    "roads": ["前面道路や接道道路の名称・種別（読める範囲）"],
+    "rivers": ["近接する河川・水路名（読める範囲）"]
   },
   "confidence": "high" | "medium" | "low",
   "notes": "道路の認識根拠（何を手がかりに道路と判断したか）を含めて記載"
@@ -100,6 +108,55 @@ const EXTRACTION_PROMPT = `あなたは建築士向けの敷地分析AIです。
 JSONのみ出力し、他のテキストは含めないでください。`;
 
 export const maxDuration = 300; // Allow up to 5 minutes for Gemini response
+
+type CardinalDirection = 'south' | 'north' | 'east' | 'west';
+
+const DIRECTION_KEYWORDS: Record<CardinalDirection, string[]> = {
+  south: ['south', 's', '南', '南側', '南面', '南道路'],
+  north: ['north', 'n', '北', '北側', '北面', '北道路'],
+  east: ['east', 'e', '東', '東側', '東面', '東道路'],
+  west: ['west', 'w', '西', '西側', '西面', '西道路'],
+};
+
+function normalizeRoadDirection(value: unknown): CardinalDirection | undefined {
+  if (typeof value !== 'string') return undefined;
+
+  const compact = value
+    .trim()
+    .toLowerCase()
+    .replace(/[ \t　_/-]/g, '');
+  if (!compact) return undefined;
+
+  for (const direction of ['south', 'north', 'east', 'west'] as const) {
+    if (DIRECTION_KEYWORDS[direction].includes(compact)) {
+      return direction;
+    }
+  }
+
+  // Fallback for labels like "南側道路" or "eastside"
+  if ((compact.includes('south') || compact.includes('南')) && !compact.includes('north') && !compact.includes('北')) return 'south';
+  if ((compact.includes('north') || compact.includes('北')) && !compact.includes('south') && !compact.includes('南')) return 'north';
+  if ((compact.includes('east') || compact.includes('東')) && !compact.includes('west') && !compact.includes('西')) return 'east';
+  if ((compact.includes('west') || compact.includes('西')) && !compact.includes('east') && !compact.includes('東')) return 'west';
+
+  return undefined;
+}
+
+function coerceNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value !== 'string') return undefined;
+
+  const cleaned = value.trim().replace(/,/g, '');
+  if (!cleaned) return undefined;
+
+  const match = cleaned.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return undefined;
+
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -197,22 +254,35 @@ export async function POST(req: NextRequest) {
     // Zod schema for Gemini OCR output validation
     const GeminiOutputSchema = z.object({
       type: z.enum(['survey', 'summary', 'unknown']).optional(),
+      address: z.string().nullable().optional(),
       site: z.object({
-        vertices: z.array(z.object({ x: z.number(), y: z.number() })).min(3),
-        area: z.number().positive(),
-        frontageWidth: z.number().positive().optional(),
-        depth: z.number().positive().optional(),
+        vertices: z.array(z.object({
+          x: z.preprocess(coerceNumber, z.number()),
+          y: z.preprocess(coerceNumber, z.number()),
+        })).min(3),
+        area: z.preprocess(coerceNumber, z.number().positive()),
+        frontageWidth: z.preprocess(coerceNumber, z.number().positive()).optional(),
+        depth: z.preprocess(coerceNumber, z.number().positive()).optional(),
       }),
       roads: z.array(z.object({
-        direction: z.enum(['south', 'north', 'east', 'west']),
-        width: z.number().positive(),
-        edgeVertexIndices: z.array(z.number().int().min(0)).length(2),
+        direction: z.preprocess(normalizeRoadDirection, z.enum(['south', 'north', 'east', 'west']).optional()),
+        width: z.preprocess(coerceNumber, z.number().positive()).optional(),
+        edgeVertexIndices: z.array(
+          z.preprocess(coerceNumber, z.number().int().min(0)),
+        ).length(2).optional(),
+        confidence: z.enum(['high', 'medium', 'low']).optional(),
+        reasoning: z.string().optional(),
+        sourceDetail: z.string().optional(),
       })).optional(),
       zoning: z.object({
         district: z.string().nullable().optional(),
-        coverageRatio: z.number().min(0).max(1).nullable().optional(),
-        floorAreaRatio: z.number().min(0).nullable().optional(),
+        coverageRatio: z.preprocess(coerceNumber, z.number().min(0).max(1)).nullable().optional(),
+        floorAreaRatio: z.preprocess(coerceNumber, z.number().min(0)).nullable().optional(),
         fireDistrict: z.string().nullable().optional(),
+      }).optional(),
+      surroundings: z.object({
+        roads: z.array(z.string()).optional(),
+        rivers: z.array(z.string()).optional(),
       }).optional(),
       confidence: z.enum(['high', 'medium', 'low']).optional(),
       notes: z.string().optional(),
@@ -235,7 +305,21 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      return NextResponse.json(validated.data);
+      const normalizedRoads = validated.data.roads?.map((road) => ({
+        ...road,
+        confidence: road.confidence ?? validated.data.confidence ?? 'low',
+        reasoning:
+          road.reasoning ??
+          validated.data.notes ??
+          '図面上の道路表記と接道関係から推定しました。',
+        sourceLabel: 'Gemini Vision OCR',
+        sourceDetail: road.sourceDetail,
+      }));
+
+      return NextResponse.json({
+        ...validated.data,
+        roads: normalizedRoads,
+      });
     } catch {
       console.error('Failed to parse Gemini response as JSON:', text);
       return NextResponse.json(

@@ -108,6 +108,35 @@ describe('calculateRoadSetbackHeight', () => {
     // height = 12 * 1.25 = 15
     expect(calculateRoadSetbackHeight(point, wideRoad, 1.25)).toBeCloseTo(15, 10);
   });
+
+  it('adds front-setback relief to the deemed opposite-side reference line', () => {
+    const adjustedRoad: Road = {
+      ...road,
+      width: 4,
+      centerOffset: 2,
+      frontSetback: 1,
+    };
+
+    expect(
+      calculateRoadSetbackHeight({ x: 5, y: 1 }, adjustedRoad, 1.25),
+    ).toBeCloseTo(7.5, 10);
+  });
+
+  it('adds road-facing wall-setback relief when explicitly provided', () => {
+    const point: Point2D = { x: 5, y: 1 };
+
+    expect(calculateRoadSetbackHeight(point, { ...road, width: 4, centerOffset: 2 }, 1.25))
+      .toBeCloseTo(6.25, 10);
+    expect(
+      calculateRoadSetbackHeight(
+        point,
+        { ...road, width: 4, centerOffset: 2 },
+        1.25,
+        undefined,
+        { setbackRelief: 1 },
+      ),
+    ).toBeCloseTo(7.5, 10);
+  });
 });
 
 describe('calculateMinRoadSetbackHeight', () => {
@@ -139,6 +168,31 @@ describe('calculateMinRoadSetbackHeight', () => {
       13.75,
       10,
     );
+  });
+
+  it('applies 2A/35m relief only when the point is beyond 10m from the other road centerline', () => {
+    const narrowRoad: Road = {
+      edgeStart: { x: 0, y: 0 },
+      edgeEnd: { x: 30, y: 0 },
+      width: 4,
+      centerOffset: 2,
+      bearing: 180,
+    };
+    const wideRoad: Road = {
+      edgeStart: { x: 0, y: 20 },
+      edgeEnd: { x: 0, y: 0 },
+      width: 8,
+      centerOffset: 4,
+      bearing: 270,
+      enableTwoA35m: true,
+    };
+
+    expect(
+      calculateMinRoadSetbackHeight({ x: 11, y: 9 }, [narrowRoad, wideRoad], 1.25, 25),
+    ).toBeCloseTo(21.25, 10);
+    expect(
+      calculateMinRoadSetbackHeight({ x: 5, y: 5 }, [narrowRoad, wideRoad], 1.25, 25),
+    ).toBeCloseTo(11.25, 10);
   });
 
   it('ignores roads beyond application distance', () => {

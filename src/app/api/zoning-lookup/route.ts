@@ -5,6 +5,13 @@ import {
   latLngToTile,
   pointInFeatureGeometry,
 } from '@/lib/mvt-utils';
+import { parseRequestLatLng } from '@/lib/coordinate-parser';
+import {
+  aggregateDistrictsFromSampling,
+  pickDominantDistrict,
+  type DistrictSample,
+  type TilePoint,
+} from '@/lib/zoning-aggregation';
 
 /**
  * Look up zoning data for a given lat/lng by fetching a PBF vector tile
@@ -118,37 +125,73 @@ function normalizeDistrictValue(val: string | number | undefined): string | unde
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
+type ZoningLookupResult = {
+  district: string;
+  coverageRatio: number;
+  floorAreaRatio: number;
+  fireDistrict: string;
+  districts?: Array<{
+    district: string;
+    ratio: number;
+    coverageRatio: number;
+    floorAreaRatio: number;
+    fireDistrict: string;
+  }>;
+};
+
+function parseSiteCoordinates(value: unknown): [number, number][] | null {
+  if (!Array.isArray(value) || value.length < 3) return null;
+  const points: [number, number][] = [];
+
+  for (const item of value) {
+    if (!Array.isArray(item) || item.length < 2) return null;
+    const [lng, lat] = item;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    points.push([lng, lat]);
+  }
+
+  if (points.length < 3) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const isClosed = Math.abs(first[0] - last[0]) < 1e-12 && Math.abs(first[1] - last[1]) < 1e-12;
+  if (isClosed) points.pop();
+
+  return points.length >= 3 ? points : null;
+}
+
+function parseFeatureDistrictSample(props: Record<string, unknown>): DistrictSample | null {
+  const districtRaw = findProperty(props, DISTRICT_KEYS);
+  const district = normalizeDistrictValue(districtRaw);
+  if (!district) return null;
+
+  const coverageRaw = findProperty(props, COVERAGE_KEYS);
+  const farRaw = findProperty(props, FAR_KEYS);
+  const fireRaw = findProperty(props, FIRE_KEYS);
+
+  return {
+    district,
+    coverageRatio: parseNumericValue(coverageRaw) ?? 0,
+    floorAreaRatio: parseNumericValue(farRaw) ?? 0,
+    fireDistrict: fireRaw ? String(fireRaw) : '指定なし',
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { lat, lng } = body;
-
-    if (typeof lat !== 'number' || typeof lng !== 'number' || !isFinite(lat) || !isFinite(lng)) {
-      return NextResponse.json(
-        { error: '緯度(lat)と経度(lng)は有限の数値で指定してください' },
-        { status: 400 }
-      );
+    const parsed = parseRequestLatLng({ lat: body?.lat, lng: body?.lng });
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
-
-    if (lat < -90 || lat > 90) {
-      return NextResponse.json(
-        { error: `緯度(lat)は-90〜90の範囲で指定してください（受信値: ${lat}）` },
-        { status: 400 }
-      );
-    }
-
-    if (lng < -180 || lng > 180) {
-      return NextResponse.json(
-        { error: `経度(lng)は-180〜180の範囲で指定してください（受信値: ${lng}）` },
-        { status: 400 }
-      );
-    }
+    const { lat, lng } = parsed;
+    const siteCoordinates = parseSiteCoordinates(body?.siteCoordinates);
 
     // Try zoom level 15 first, then fall back to 14
     const zoomLevels = [15, 14];
 
     for (const z of zoomLevels) {
-      const result = await tryFetchZoning(lat, lng, z);
+      const result = await tryFetchZoning(lat, lng, z, siteCoordinates);
       if (result) {
         return NextResponse.json(result);
       }
@@ -177,13 +220,9 @@ export async function POST(req: NextRequest) {
 async function tryFetchZoning(
   lat: number,
   lng: number,
-  z: number
-): Promise<{
-  district: string;
-  coverageRatio: number;
-  floorAreaRatio: number;
-  fireDistrict: string;
-} | null> {
+  z: number,
+  siteCoordinates: [number, number][] | null,
+): Promise<ZoningLookupResult | null> {
   const { tileX, tileY } = latLngToTile(lat, lng, z);
 
   const url = TILE_URL_TEMPLATE
@@ -230,37 +269,73 @@ async function tryFetchZoning(
 
   const extent = debugFeature.extent;
   const { pixelX, pixelY } = latLngToPixel(lat, lng, z, tileX, tileY, extent);
+  const features = Array.from({ length: layer.length }, (_, i) => layer.feature(i));
 
   if (DEBUG) {
     console.log(`[zoning-lookup] Point in tile coords: pixelX=${pixelX.toFixed(1)}, pixelY=${pixelY.toFixed(1)}, extent=${extent}`);
   }
 
-  for (let i = 0; i < layer.length; i++) {
-    const feature = layer.feature(i);
+  let pointResult: ZoningLookupResult | null = null;
+  for (let i = 0; i < features.length; i++) {
+    const feature = features[i];
 
     if (pointInFeatureGeometry(pixelX, pixelY, feature)) {
       const props = feature.properties as Record<string, unknown>;
 
       if (DEBUG) console.log(`[zoning-lookup] Matched feature ${i}:`, JSON.stringify(props, null, 2));
 
-      const districtRaw = findProperty(props, DISTRICT_KEYS);
-      const coverageRaw = findProperty(props, COVERAGE_KEYS);
-      const farRaw = findProperty(props, FAR_KEYS);
-      const fireRaw = findProperty(props, FIRE_KEYS);
+      const sample = parseFeatureDistrictSample(props);
+      if (sample) {
+        pointResult = {
+          district: sample.district,
+          coverageRatio: sample.coverageRatio,
+          floorAreaRatio: sample.floorAreaRatio,
+          fireDistrict: sample.fireDistrict,
+        };
+      }
+      break;
+    }
+  }
 
-      const district = normalizeDistrictValue(districtRaw) ?? '不明';
-      const coverageRatio = parseNumericValue(coverageRaw) ?? 0;
-      const floorAreaRatio = parseNumericValue(farRaw) ?? 0;
-      const fireDistrict = fireRaw ? String(fireRaw) : '指定なし';
+  if (siteCoordinates && siteCoordinates.length >= 3) {
+    const sitePixels: TilePoint[] = siteCoordinates.map(([siteLng, siteLat]) => {
+      const { pixelX: siteX, pixelY: siteY } = latLngToPixel(siteLat, siteLng, z, tileX, tileY, extent);
+      return { x: siteX, y: siteY };
+    });
 
+    const minX = Math.min(...sitePixels.map((p) => p.x));
+    const maxX = Math.max(...sitePixels.map((p) => p.x));
+    const minY = Math.min(...sitePixels.map((p) => p.y));
+    const maxY = Math.max(...sitePixels.map((p) => p.y));
+    const bboxArea = Math.max(1, (maxX - minX) * (maxY - minY));
+    const step = Math.max(2, Math.floor(Math.sqrt(bboxArea / 1600)));
+
+    const districts = aggregateDistrictsFromSampling(
+      sitePixels,
+      (x, y) => {
+        for (const feature of features) {
+          if (!pointInFeatureGeometry(x, y, feature)) continue;
+          const props = feature.properties as Record<string, unknown>;
+          return parseFeatureDistrictSample(props);
+        }
+        return null;
+      },
+      { step },
+    );
+
+    const dominant = pickDominantDistrict(districts);
+    if (dominant) {
       return {
-        district,
-        coverageRatio,
-        floorAreaRatio,
-        fireDistrict,
+        district: dominant.district,
+        coverageRatio: dominant.coverageRatio,
+        floorAreaRatio: dominant.floorAreaRatio,
+        fireDistrict: dominant.fireDistrict,
+        districts,
       };
     }
   }
+
+  if (pointResult) return pointResult;
 
   if (DEBUG) console.log(`[zoning-lookup] No feature matched at z=${z}`);
   return null;

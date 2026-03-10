@@ -6,41 +6,67 @@ import { cn } from '@/lib/cn';
 interface HeroMetricsProps {
   result: VolumeResult | null;
   className?: string;
+  compact?: boolean;
 }
 
-function Metric({ label, value, unit }: { label: string; value: string; unit: string }) {
+function MetricCard({
+  label,
+  value,
+  unit,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+  compact?: boolean;
+}) {
   return (
-    <div className="text-center">
-      <div className="text-lg font-bold font-display text-foreground leading-none">
+    <div
+      className={cn(
+        'ui-surface min-w-[108px] px-4 py-3 text-center',
+        compact && 'min-w-0 rounded-2xl px-3 py-2.5',
+      )}
+    >
+      <p
+        className={cn(
+          'text-[10px] font-medium tracking-[0.14em] text-muted-foreground',
+          compact && 'text-[9px] tracking-[0.12em]',
+        )}
+      >
+        {label}
+      </p>
+      <div
+        className={cn(
+          'mt-2 font-display text-2xl font-semibold leading-none text-foreground',
+          compact && 'mt-1.5 text-lg',
+        )}
+      >
         {value}
-        <span className="text-xs font-normal text-muted-foreground ml-0.5">{unit}</span>
+        <span className={cn('ml-1 text-sm font-normal text-muted-foreground', compact && 'text-[11px]')}>
+          {unit}
+        </span>
       </div>
-      <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
     </div>
   );
 }
 
-export function HeroMetrics({ result, className }: HeroMetricsProps) {
+export function HeroMetrics({ result, className, compact = false }: HeroMetricsProps) {
   if (!result) return null;
 
   return (
-    <div className={cn('flex items-center justify-center gap-6 rounded-lg bg-card/90 backdrop-blur-sm border border-border px-4 py-2.5 shadow-lg', className)}>
-      <Metric
-        label="最大高さ"
+    <div className={cn('grid grid-cols-3 gap-2', compact && 'gap-1.5', className)}>
+      <MetricCard
+        label="最高高さ"
         value={Number.isFinite(result.maxHeight) ? result.maxHeight.toFixed(1) : '---'}
         unit="m"
+        compact={compact}
       />
-      <div className="w-px h-8 bg-border" />
-      <Metric
-        label="階数"
-        value={`${result.maxFloors}`}
-        unit="F"
-      />
-      <div className="w-px h-8 bg-border" />
-      <Metric
-        label="延べ面積"
+      <MetricCard label="階数" value={`${result.maxFloors}`} unit="F" compact={compact} />
+      <MetricCard
+        label="延床面積"
         value={result.maxFloorArea.toFixed(0)}
         unit="m²"
+        compact={compact}
       />
     </div>
   );

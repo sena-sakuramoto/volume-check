@@ -10,63 +10,75 @@ export type Step = 1 | 2 | 3;
 interface SidebarStepperProps {
   activeStep: Step;
   onStepChange: (step: Step) => void;
-  /** Indicates if each step has been completed */
   completedSteps: { 1: boolean; 2: boolean; 3: boolean };
+  readySteps: { 1: boolean; 2: boolean; 3: boolean };
 }
 
 type StepIcon = ComponentType<{ className?: string }>;
 
-const STEPS: { step: Step; label: string; Icon: StepIcon }[] = [
-  { step: 1, label: '敷地', Icon: MapPin },
-  { step: 2, label: '法規', Icon: Scale },
-  { step: 3, label: '結果', Icon: ChartBar },
+const STEPS: Array<{
+  step: Step;
+  label: string;
+  sublabel: string;
+  Icon: StepIcon;
+}> = [
+  { step: 1, label: '敷地', sublabel: '入力', Icon: MapPin },
+  { step: 2, label: '法規', sublabel: '設定', Icon: Scale },
+  { step: 3, label: '結果', sublabel: '確認', Icon: ChartBar },
 ];
 
-export function SidebarStepper({ activeStep, onStepChange, completedSteps }: SidebarStepperProps) {
+export function SidebarStepper({
+  activeStep,
+  onStepChange,
+  completedSteps,
+  readySteps,
+}: SidebarStepperProps) {
   return (
-    <div className="flex items-center justify-center gap-0 px-4 py-3">
-      {STEPS.map(({ step, label, Icon }, idx) => {
+    <div className="grid grid-cols-3 gap-2 px-4 pb-4">
+      {STEPS.map(({ step, label, sublabel, Icon }) => {
         const isActive = activeStep === step;
         const isCompleted = completedSteps[step];
+        const isReady = readySteps[step];
+
         return (
-          <div key={step} className="flex items-center">
-            <button
-              onClick={() => onStepChange(step)}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-all',
-                isActive
-                  ? 'bg-primary/15 text-primary'
-                  : isCompleted
-                    ? 'text-primary/60 hover:text-primary/80'
-                    : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Icon className="h-3 w-3" />
-              <div className={cn(
-                'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold',
-                isActive
-                  ? 'bg-primary text-primary-foreground'
-                  : isCompleted
-                    ? 'bg-primary/20 text-primary'
-                    : 'bg-secondary text-muted-foreground',
-              )}>
-                {isCompleted && !isActive ? (
-                  <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                    <path d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  step
-                )}
-              </div>
-              <span className={isActive ? '' : 'hidden sm:inline'}>{label}</span>
-            </button>
-            {idx < STEPS.length - 1 && (
-              <div className={cn(
-                'h-px w-6 mx-0.5',
-                isCompleted ? 'bg-primary/30' : 'bg-border',
-              )} />
+          <button
+            key={step}
+            onClick={() => onStepChange(step)}
+            className={cn(
+              'ui-surface-soft flex min-h-[90px] flex-col items-start gap-2 px-3 py-3 text-left transition-all',
+              isActive
+                ? 'border-[rgba(15,140,131,0.28)] bg-[linear-gradient(180deg,rgba(226,248,244,0.96),rgba(245,250,247,0.92))] shadow-[0_12px_28px_rgba(15,140,131,0.12)]'
+                : isCompleted
+                  ? 'border-[rgba(15,140,131,0.18)]'
+                  : isReady
+                    ? 'opacity-88 hover:opacity-100'
+                    : 'border-dashed border-border/80 bg-white/55 text-muted-foreground/90 hover:bg-white/70',
             )}
-          </div>
+          >
+            <div className="flex w-full items-center justify-between">
+              <div
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-semibold',
+                  isActive
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : isCompleted
+                      ? 'border-primary/30 bg-primary/10 text-primary'
+                      : 'border-border bg-white/80 text-muted-foreground',
+                )}
+              >
+                {isCompleted && !isActive ? '✓' : step}
+              </div>
+              <Icon className={cn('h-4 w-4', isActive ? 'text-primary' : isReady ? 'text-muted-foreground' : 'text-muted-foreground/70')} />
+            </div>
+
+            <div>
+              <p className="text-[11px] font-semibold text-foreground">{label}</p>
+              <p className="text-[10px] text-muted-foreground">{sublabel}</p>
+              {!isCompleted && !isReady ? (
+                <p className="mt-1 text-[9px] font-medium text-amber-800">前の入力がまだ途中</p>
+              ) : null}
+            </div>
+          </button>
         );
       })}
     </div>

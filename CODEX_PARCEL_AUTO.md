@@ -1,5 +1,7 @@
 # CODEX_PARCEL_AUTO: 敷地形状の自動取得（AMX PMTiles + PLATEAU道路検出）
 
+> **Session Handoff:** 作業前に必ず `docs/handover/VOLUMECHECK_MASTER_HANDOVER.md` を読み、起動URL・既知不具合・復旧手順を引き継ぐこと。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 住所を入れて地図上で筆界をクリック → 敷地形状 + 接道道路が自動で設定される

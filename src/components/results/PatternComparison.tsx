@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import type { PatternResult, BuildingPatternResult } from '@/engine/types';
 import { cn } from '@/lib/cn';
@@ -8,26 +8,26 @@ function PatternCard({ pattern, isBest }: { pattern: PatternResult; isBest: bool
   const footprintValid = pattern.footprintArea > 0 && pattern.footprint.length >= 3;
   const passLabel = footprintValid
     ? (pattern.compliance.passes ? '適合' : '不適合')
-    : '適用不可';
+    : '算定不可';
   const passColor = footprintValid
-    ? (pattern.compliance.passes ? 'text-emerald-400' : 'text-red-400')
+    ? (pattern.compliance.passes ? 'text-emerald-700' : 'text-rose-700')
     : 'text-muted-foreground';
 
   return (
     <div className={cn(
-      'rounded-lg bg-card border px-3 py-2.5',
+      'rounded-xl border border-border/80 bg-white/72 px-3 py-3',
       isBest ? 'border-primary/50' : 'border-border',
     )}>
-      <div className="flex items-center justify-between text-xs font-semibold text-foreground mb-1.5">
+      <div className="mb-2 flex items-center justify-between text-xs font-semibold text-foreground">
         <span>{pattern.name}</span>
-        {isBest && <Badge variant="default" className="text-[9px] h-4 px-1.5">最適</Badge>}
+        {isBest && <Badge variant="default" className="h-4 px-1.5 text-[9px]">最大案</Badge>}
       </div>
       <div className="space-y-0.5 text-xs">
         <Row label="階数/高さ" value={`${pattern.maxFloors}F / ${pattern.maxHeight}m`} />
         <Row label="建築面積" value={`${pattern.footprintArea}m²`} />
-        <Row label="延べ面積" value={`${pattern.totalFloorArea}m²`} />
+        <Row label="延床面積" value={`${pattern.totalFloorArea}m²`} />
         {typeof pattern.inset === 'number' && (
-          <Row label="追加後退" value={`${pattern.inset.toFixed(1)}m`} />
+          <Row label="追加セットバック" value={`${pattern.inset.toFixed(1)}m`} />
         )}
         {footprintValid && (
           <>
@@ -37,7 +37,7 @@ function PatternCard({ pattern, isBest }: { pattern: PatternResult; isBest: bool
         )}
         {!footprintValid && (
           <p className="text-[10px] text-muted-foreground pt-1">
-            5mインセットが敷地内に収まらず、評価対象外
+            5mラインの評価に必要な建築面積を確保できないため、比較対象から外れています。
           </p>
         )}
         <div className={cn('flex items-center justify-end gap-1 pt-1 font-semibold', passColor)}>
@@ -78,8 +78,9 @@ export function PatternComparison({ patterns }: PatternComparisonProps) {
         <PatternCard pattern={optimal} isBest={best?.name === optimal.name} />
       </div>
       <p className="text-[10px] text-muted-foreground">
-        最適パターンは「追加後退」を自動探索し、延べ面積が最大となる形状を提示します。
+        最大案は追加セットバックを考慮したうえで、延床面積がもっとも大きいパターンを表示しています。
       </p>
     </div>
   );
 }
+

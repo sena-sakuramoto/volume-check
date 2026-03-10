@@ -75,7 +75,8 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
   return (
     <Canvas
       camera={{ position: cameraPos, fov: 45, near: 0.1, far: 500 }}
-      style={{ width: '100%', height: '100%', background: '#0f1218' }}
+      style={{ width: '100%', height: '100%', background: '#f2f6fc' }}
+      dpr={[1.5, 2.5]}
       gl={{ antialias: true }}
     >
       <Suspense fallback={null}>
@@ -83,17 +84,17 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
         <ambientLight intensity={0.3} />
         <directionalLight position={[15, 25, 10]} intensity={1.2} />
         <directionalLight position={[-8, 15, -5]} intensity={0.3} />
-        <Environment preset="city" background={false} environmentIntensity={0.5} />
+        <Environment preset="city" background={false} environmentIntensity={0.45} />
 
         {/* Ground grid */}
         <Grid
           args={[100, 100]}
           cellSize={1}
           cellThickness={0.4}
-          cellColor="#22262e"
+          cellColor="#bcc7d8"
           sectionSize={5}
           sectionThickness={0.8}
-          sectionColor="#333a47"
+          sectionColor="#8ca0ba"
           fadeDistance={40}
           infiniteGrid
         />
@@ -155,10 +156,10 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
         {/* Floor plates */}
         {site && zoning && volumeResult && layers.floorPlates && (
           <FloorSlices
-            site={site}
-            zoning={zoning}
+            footprint={volumeResult.buildablePolygon ?? site.vertices}
             floorHeights={floorHeights}
             maxHeight={volumeResult.maxHeight}
+            heightField={volumeResult.heightFieldData}
           />
         )}
 
@@ -212,7 +213,7 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
         {/* Controls */}
         <OrbitControls makeDefault target={target} />
         <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
-          <GizmoViewport labelColor="white" axisHeadScale={1} />
+          <GizmoViewport labelColor="#0f172a" axisHeadScale={1} />
         </GizmoHelper>
       </Suspense>
     </Canvas>

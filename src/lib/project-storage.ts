@@ -1,4 +1,5 @@
 import type { SiteBoundary, Road, ZoningData } from '@/engine/types';
+import type { RoadConfig } from '@/components/site/site-types';
 
 const STORAGE_KEY = 'volumecheck_project';
 
@@ -8,6 +9,7 @@ export interface ProjectData {
   zoning: ZoningData;
   latitude: number;
   floorHeights: number[];
+  roadConfigs?: RoadConfig[];
   savedAt: string;
 }
 

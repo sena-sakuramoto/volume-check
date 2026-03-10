@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildSiteFromGeoRing, extractGeoRingFromPayload, inferDefaultRoadFromVertices } from '@/lib/site-shape';
+import { parseRequestLatLng } from '@/lib/coordinate-parser';
 
 interface ParcelLookupRequest {
   lat: number;
@@ -13,14 +14,12 @@ const DEFAULT_ROAD_WIDTH = 6;
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as Partial<ParcelLookupRequest>;
-    const { lat, lng, address } = body;
-
-    if (typeof lat !== 'number' || typeof lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return NextResponse.json(
-        { error: '緯度(lat)と経度(lng)は有限の数値で指定してください' },
-        { status: 400 },
-      );
+    const { address } = body;
+    const parsed = parseRequestLatLng({ lat: body.lat, lng: body.lng });
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
+    const { lat, lng } = parsed;
 
     const endpoint = process.env.PARCEL_SHAPE_API_URL;
     if (!endpoint) {
@@ -79,6 +78,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       site,
       roads: road ? [road] : [],
+      siteCoordinates: ring.map((point) => [point.lng, point.lat] as [number, number]),
       source: 'parcel-shape-api',
     });
   } catch (error) {
@@ -89,4 +89,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

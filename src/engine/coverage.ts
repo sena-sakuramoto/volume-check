@@ -1,14 +1,12 @@
 import type { SiteBoundary, ZoningData } from './types';
 
-/**
- * Calculate maximum building coverage area (建築面積) in m².
- * Applies corner lot bonus (+10%) and fire district bonus (+10%).
- * Caps the effective ratio at 1.0 (100%).
- */
 export function calculateMaxCoverage(site: SiteBoundary, zoning: ZoningData): number {
   let ratio = zoning.coverageRatio;
   if (zoning.isCornerLot) ratio += 0.1;
   if (zoning.fireDistrict === '防火地域') ratio += 0.1;
+  if (zoning.districtPlan?.coverageRatio !== undefined) {
+    ratio = Math.min(ratio, zoning.districtPlan.coverageRatio);
+  }
   ratio = Math.min(ratio, 1.0);
   return Math.round(site.area * ratio * 100) / 100;
 }

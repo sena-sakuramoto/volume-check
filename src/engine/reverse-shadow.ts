@@ -1,5 +1,6 @@
 import type { Point2D, ShadowRegulation, HeightFieldData, ContourLine, ReverseShadowResult } from './types';
 import { calculateShadowConstrainedHeight } from './shadow';
+import { offsetShadowBoundary } from './shadow-boundary';
 
 // ---------------------------------------------------------------------------
 // Reverse shadow (逆日影) analysis
@@ -23,8 +24,8 @@ const REVERSE_SHADOW_RESOLUTION = 0.3;
  * buildable envelope, rather than projecting shadows forward.
  */
 export function generateReverseShadow(
-  siteVertices: Point2D[],
   buildablePolygon: Point2D[],
+  measurementBoundary: Point2D[],
   shadowReg: ShadowRegulation,
   latitude: number,
   northRotation: number,
@@ -63,7 +64,7 @@ export function generateReverseShadow(
       insideMask[idx] = 1;
       heights[idx] = calculateShadowConstrainedHeight(
         point,
-        siteVertices,
+        measurementBoundary,
         shadowReg,
         latitude,
         northRotation,
@@ -88,8 +89,8 @@ export function generateReverseShadow(
   );
 
   // Generate 5m and 10m offset lines
-  const line5m = generateOffsetLine(siteVertices, 5);
-  const line10m = generateOffsetLine(siteVertices, 10);
+  const line5m = offsetShadowBoundary(measurementBoundary, 5);
+  const line10m = offsetShadowBoundary(measurementBoundary, 10);
 
   return { shadowHeightField, contourLines, line5m, line10m };
 }
@@ -253,45 +254,3 @@ function isInsidePoly(point: Point2D, polygon: Point2D[]): boolean {
   return inside;
 }
 
-/** Line-line intersection for offset line generation */
-function lineLineIntersection(
-  p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D,
-): Point2D | null {
-  const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
-  const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
-  const denom = d1x * d2y - d1y * d2x;
-  if (Math.abs(denom) < 1e-12) return null;
-  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
-  return { x: p1.x + t * d1x, y: p1.y + t * d1y };
-}
-
-/** Generate outward offset polygon from site boundary */
-function generateOffsetLine(vertices: Point2D[], offset: number): Point2D[] {
-  const n = vertices.length;
-  if (n < 3) return [];
-
-  const offsetEdges: { start: Point2D; end: Point2D }[] = [];
-  for (let i = 0; i < n; i++) {
-    const a = vertices[i];
-    const b = vertices[(i + 1) % n];
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-10) continue;
-    const nx = (dy / len) * offset, ny = (-dx / len) * offset;
-    offsetEdges.push({
-      start: { x: a.x + nx, y: a.y + ny },
-      end: { x: b.x + nx, y: b.y + ny },
-    });
-  }
-
-  if (offsetEdges.length < 2) return [];
-
-  const result: Point2D[] = [];
-  for (let i = 0; i < offsetEdges.length; i++) {
-    const e1 = offsetEdges[i];
-    const e2 = offsetEdges[(i + 1) % offsetEdges.length];
-    const pt = lineLineIntersection(e1.start, e1.end, e2.start, e2.end);
-    result.push(pt ?? e1.end);
-  }
-  return result;
-}

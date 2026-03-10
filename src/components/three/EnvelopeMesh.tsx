@@ -25,9 +25,7 @@ export function EnvelopeMesh({ vertices, indices }: EnvelopeMeshProps) {
         color="#e8eaed"
         roughness={0.6}
         metalness={0.05}
-        transparent
-        opacity={0.92}
-        side={THREE.DoubleSide}
+        side={THREE.FrontSide}
         envMapIntensity={0.8}
       />
     </mesh>

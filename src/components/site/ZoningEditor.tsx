@@ -1,11 +1,15 @@
 'use client';
 
-import type { ZoningDistrict, FireDistrict, HeightDistrict } from '@/engine/types';
+import type { FireDistrict, HeightDistrict, ZoningDistrict } from '@/engine/types';
 import { getZoningDefaults } from '@/engine';
 import { Input } from '@/components/ui/shadcn/input';
 import { cn } from '@/lib/cn';
-import { DISTRICT_GROUPS } from './site-types';
-import { shortenDistrict } from './site-helpers';
+import {
+  DISTRICT_GROUPS,
+  FIRE_DISTRICT_OPTIONS,
+  HEIGHT_DISTRICT_OPTIONS,
+  getDistrictShortLabel,
+} from './site-types';
 
 interface ZoningEditorProps {
   selectedDistrict: ZoningDistrict | null;
@@ -39,27 +43,27 @@ export function ZoningEditor({
   onCornerLotChange,
 }: ZoningEditorProps) {
   return (
-    <div className="space-y-3">
-      {/* District selection */}
-      <div className="space-y-1.5">
+    <div className="space-y-4">
+      <div className="space-y-2">
         <label className="text-xs font-medium text-muted-foreground">用途地域</label>
         {DISTRICT_GROUPS.map((group) => (
-          <div key={group.label} className="space-y-0.5">
+          <div key={group.label} className="space-y-1">
             <span className="block text-[10px] text-muted-foreground/70">{group.label}</span>
-            <div className="grid grid-cols-2 gap-0.5">
+            <div className="grid grid-cols-2 gap-1">
               {group.districts.map((district) => {
                 const isActive = selectedDistrict === district;
                 return (
                   <button
                     key={district}
+                    type="button"
                     onClick={() => onDistrictChange(district)}
                     title={district}
                     className={cn(
-                      'rounded-md px-1.5 py-1 text-[10px] font-medium transition-colors truncate',
+                      'truncate rounded-xl px-2 py-2 text-[11px] font-medium transition-colors',
                       isActive ? group.activeBgClass : group.bgClass,
                     )}
                   >
-                    {shortenDistrict(district)}
+                    {getDistrictShortLabel(district)}
                   </button>
                 );
               })}
@@ -68,101 +72,103 @@ export function ZoningEditor({
         ))}
       </div>
 
-      {/* Coverage + FAR overrides */}
-      {selectedDistrict && (
-        <div className="grid grid-cols-2 gap-2">
+      {selectedDistrict ? (
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-[10px] text-muted-foreground mb-0.5">建ぺい率 (%)</label>
+            <label className="mb-1 block text-[10px] text-muted-foreground">建ぺい率 (%)</label>
             <Input
               type="number"
               value={coverageOverride}
               onChange={(e) => onCoverageChange(e.target.value)}
-              placeholder={String(Math.round(getZoningDefaults(selectedDistrict).defaultCoverageRatio * 100))}
+              placeholder={String(
+                Math.round(getZoningDefaults(selectedDistrict).defaultCoverageRatio * 100),
+              )}
               min="0"
               max="100"
-              className="h-7 text-xs"
+              className="h-9 text-sm"
             />
           </div>
           <div>
-            <label className="block text-[10px] text-muted-foreground mb-0.5">容積率 (%)</label>
+            <label className="mb-1 block text-[10px] text-muted-foreground">容積率 (%)</label>
             <Input
               type="number"
               value={farOverride}
               onChange={(e) => onFarChange(e.target.value)}
-              placeholder={String(Math.round(getZoningDefaults(selectedDistrict).defaultFloorAreaRatio * 100))}
+              placeholder={String(
+                Math.round(getZoningDefaults(selectedDistrict).defaultFloorAreaRatio * 100),
+              )}
               min="0"
               max="1300"
-              className="h-7 text-xs"
+              className="h-9 text-sm"
             />
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Fire district */}
-      {selectedDistrict && (
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">防火地域</label>
-          <div className="flex gap-1">
-            {(['指定なし', '準防火地域', '防火地域'] as FireDistrict[]).map((fd) => (
+      {selectedDistrict ? (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">防火指定</label>
+          <div className="flex gap-1.5">
+            {FIRE_DISTRICT_OPTIONS.map((option) => (
               <button
-                key={fd}
-                onClick={() => onFireDistrictChange(fd)}
+                key={option.key}
+                type="button"
+                onClick={() => onFireDistrictChange(option.key)}
                 className={cn(
-                  'flex-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors',
-                  fireDistrict === fd
+                  'flex-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors',
+                  fireDistrict === option.key
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-secondary text-muted-foreground hover:text-foreground',
                 )}
               >
-                {fd === '指定なし' ? 'なし' : fd.replace('地域', '')}
+                {option.label}
               </button>
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Corner lot */}
-      {selectedDistrict && (
-        <label className="flex items-center gap-1.5 cursor-pointer">
+      {selectedDistrict ? (
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/80 bg-white/70 px-3 py-3">
           <input
             type="checkbox"
             checked={isCornerLot}
             onChange={(e) => onCornerLotChange(e.target.checked)}
-            className="rounded border-border bg-input text-primary focus:ring-ring focus:ring-offset-0 w-3.5 h-3.5"
+            className="h-4 w-4 rounded border-border bg-input text-primary focus:ring-ring focus:ring-offset-0"
           />
-          <span className="text-[10px] text-foreground/80">角地 (建ぺい率+10%)</span>
+          <span className="text-[11px] text-foreground/85">角地として扱う（建ぺい率 +10%）</span>
         </label>
-      )}
+      ) : null}
 
-      {/* Height district */}
-      {selectedDistrict && (
-        <div className="space-y-1">
+      {selectedDistrict ? (
+        <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-muted-foreground">高度地区</label>
-            {heightDistrictAutoDetected && (
-              <span className="rounded border border-emerald-700/60 bg-emerald-900/30 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                自動検出
+            {heightDistrictAutoDetected ? (
+              <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] text-teal-900">
+                自動取得
               </span>
-            )}
+            ) : null}
           </div>
-          <div className="flex gap-1">
-            {(['指定なし', '第一種', '第二種', '第三種'] as HeightDistrict['type'][]).map((hd) => (
+          <div className="grid grid-cols-2 gap-1.5">
+            {HEIGHT_DISTRICT_OPTIONS.map((option) => (
               <button
-                key={hd}
-                onClick={() => onHeightDistrictChange(hd)}
+                key={option.key}
+                type="button"
+                onClick={() => onHeightDistrictChange(option.key)}
                 className={cn(
-                  'flex-1 rounded-md px-1.5 py-1 text-[10px] font-medium transition-colors',
-                  heightDistrictType === hd
+                  'rounded-xl px-2 py-2 text-[11px] font-medium transition-colors',
+                  heightDistrictType === option.key
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-secondary text-muted-foreground hover:text-foreground',
                 )}
               >
-                {hd === '指定なし' ? 'なし' : hd}
+                {option.label}
               </button>
             ))}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -29,6 +29,48 @@ export interface Road {
   centerOffset: number;
   /** Direction the road faces (compass bearing, 0=N, 90=E, 180=S, 270=W) */
   bearing: number;
+  /**
+   * Additional no-build setback inside the site, beyond any 2項道路後退.
+   * Use when the project intentionally retreats the frontage line.
+   */
+  frontSetback?: number;
+  /**
+   * Additional width credited on the opposite side of the road
+   * for opposite-side building line retreat.
+   */
+  oppositeSideSetback?: number;
+  /**
+   * Additional width credited on the opposite side of the road
+   * for parks, rivers, rail corridors, etc.
+   */
+  oppositeOpenSpace?: number;
+  /**
+   * Qualifying open-space category on the opposite side of the road.
+   * Used for UI guidance and future API/source mapping.
+   */
+  oppositeOpenSpaceKind?:
+    | 'none'
+    | 'alley'
+    | 'waterway'
+    | 'river'
+    | 'railway'
+    | 'park'
+    | 'plaza';
+  /**
+   * Optional legal reference width for road-slope only.
+   * Useful for intersection relief / 令132条など when confirmed.
+   */
+  slopeWidthOverride?: number;
+  /**
+   * Height difference between site ground and road ground in meters.
+   * Positive values mean the site is higher than the road.
+   */
+  siteHeightAboveRoad?: number;
+  /**
+   * Whether 2Aかつ35m relief should be considered for this road
+   * when multiple front roads or opposite-side open spaces exist.
+   */
+  enableTwoA35m?: boolean;
 }
 
 /** 13 zoning districts (用途地域) per Building Standards Act */
@@ -178,8 +220,9 @@ export interface VolumeResult {
   reverseShadow: ReverseShadowResult | null;
   /** Building pattern comparison (建物パターン比較) */
   buildingPatterns: BuildingPatternResult | null;
-  /** Buildable polygon after wall setback (外壁後退後の建築可能エリア) */
+  /** Buildable polygon after wall setback and confirmed road-front setbacks */
   buildablePolygon: Point2D[] | null;
+  shadowBoundary: Point2D[] | null;
 }
 
 /** Design proposal for compliance checking */

@@ -194,5 +194,15 @@ describe('calculateMaxFloorArea', () => {
       // 80 * 1.5 = 120
       expect(calculateMaxFloorArea(smallSite, zoning, roads)).toBe(120);
     });
+
+    it('caps FAR by a stricter district plan ratio', () => {
+      const zoning = makeZoning({
+        floorAreaRatio: 2.0,
+        districtPlan: { name: '地区計画', floorAreaRatio: 1.2 },
+      });
+      const roads = [makeRoad(8)];
+
+      expect(calculateMaxFloorArea(site, zoning, roads)).toBe(180);
+    });
   });
 });

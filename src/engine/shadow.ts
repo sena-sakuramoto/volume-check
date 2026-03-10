@@ -152,7 +152,7 @@ export function shadowTip(
  */
 export function calculateShadowConstrainedHeight(
   point: Point2D,
-  siteVertices: Point2D[],
+  measurementBoundary: Point2D[],
   shadowReg: ShadowRegulation,
   latitude: number,
   northRotation: number,
@@ -185,12 +185,16 @@ export function calculateShadowConstrainedHeight(
 
   if (timeSteps.length === 0) return Infinity;
 
-  const n = siteVertices.length;
+  const n = measurementBoundary.length;
 
   // If the point is very close to boundary, shadow regulation is very restrictive
   let minDistToBoundary = Infinity;
   for (let i = 0; i < n; i++) {
-    const d = distanceToSegment(point, siteVertices[i], siteVertices[(i + 1) % n]);
+    const d = distanceToSegment(
+      point,
+      measurementBoundary[i],
+      measurementBoundary[(i + 1) % n],
+    );
     if (d < minDistToBoundary) minDistToBoundary = d;
   }
   if (minDistToBoundary < 0.1) return effectiveHeight;
@@ -204,7 +208,8 @@ export function calculateShadowConstrainedHeight(
   for (let iter = 0; iter < 40; iter++) {
     const mid = (lo + hi) / 2;
     const { hours5m, hours10m } = countShadowHours(
-      mid, effectiveHeight, timeSteps, northRotation, siteVertices, point, n, timeStepHours,
+      mid, effectiveHeight, timeSteps, northRotation, point, n, timeStepHours,
+      measurementBoundary,
     );
 
     if (hours5m <= shadowReg.maxHoursAt5m && hours10m <= shadowReg.maxHoursAt10m) {
@@ -229,10 +234,10 @@ function countShadowHours(
   measurementHeight: number,
   timeSteps: { altitude: number; azimuthCompass: number }[],
   northRotation: number,
-  siteVertices: Point2D[],
   point: Point2D,
   n: number,
   timeStepHours: number,
+  measurementBoundary: Point2D[],
 ): { hours5m: number; hours10m: number } {
   let hours5m = 0;
   let hours10m = 0;
@@ -256,14 +261,18 @@ function countShadowHours(
     };
 
     // If shadow tip is inside the site, it doesn't cross any measurement line
-    if (isInsidePolygon(tip, siteVertices)) continue;
+    if (isInsidePolygon(tip, measurementBoundary)) continue;
 
     // Shadow tip is outside the site boundary.
     // Compute perpendicular distance from shadow tip to nearest boundary edge.
     // This is stricter than along-ray distance for oblique shadow angles.
     let minDist = Infinity;
     for (let i = 0; i < n; i++) {
-      const d = distanceToSegment(tip, siteVertices[i], siteVertices[(i + 1) % n]);
+      const d = distanceToSegment(
+        tip,
+        measurementBoundary[i],
+        measurementBoundary[(i + 1) % n],
+      );
       if (d < minDist) minDist = d;
     }
 
@@ -279,4 +288,3 @@ function countShadowHours(
 
   return { hours5m, hours10m };
 }
-

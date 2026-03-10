@@ -1,4 +1,5 @@
 import { solarPosition, shadowTip, calculateShadowConstrainedHeight } from '../shadow';
+import { buildShadowBoundary } from '../shadow-boundary';
 import type { ShadowRegulation, Point2D } from '../types';
 
 describe('solarPosition', () => {
@@ -175,5 +176,32 @@ describe('calculateShadowConstrainedHeight', () => {
     );
 
     expect(hPermissive).toBeGreaterThanOrEqual(hStrict - 0.1);
+  });
+
+  it('relaxes the north-side shadow boundary when a front road is on that edge', () => {
+    const northRoadBoundary = buildShadowBoundary(siteVertices, [{
+      edgeStart: { x: 20, y: 20 },
+      edgeEnd: { x: 0, y: 20 },
+      width: 4,
+      centerOffset: 2,
+      bearing: 0,
+    }]);
+
+    const baseHeight = calculateShadowConstrainedHeight(
+      { x: 10, y: 18 },
+      siteVertices,
+      shadowReg,
+      35.68,
+      0,
+    );
+    const relievedHeight = calculateShadowConstrainedHeight(
+      { x: 10, y: 18 },
+      northRoadBoundary,
+      shadowReg,
+      35.68,
+      0,
+    );
+
+    expect(relievedHeight).toBeGreaterThan(baseHeight);
   });
 });

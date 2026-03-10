@@ -1,18 +1,26 @@
 import type {
   Point2D,
   Road,
+  RoadSetbackParams,
+  AdjacentSetbackParams,
+  NorthSetbackParams,
   VolumeInput,
   VolumeResult,
 } from './types';
-import { distanceToSegment, isInsidePolygon } from './geometry';
+import { distanceToSegment, isInsidePolygon, isInsidePolygonOrBoundary } from './geometry';
 import { calculateMaxCoverage } from './coverage';
 import { calculateMaxFloorArea } from './floor-area';
 import { getAbsoluteHeightLimit } from './absolute-height';
-import { calculateRoadSetbackHeight } from './setback-road';
+import {
+  calculateRoadSetbackHeight,
+  getRoadRequiredFrontSetback,
+  getRoadSlopeSetbackRelief,
+  getRoadSlopeEffectiveWidthsAtPoint,
+} from './setback-road';
 import { calculateAdjacentSetbackHeight } from './setback-adjacent';
 import { calculateNorthSetbackHeight } from './setback-north';
 import { calculateHeightDistrictLimit } from './height-district';
-import { applyWallSetback } from './wall-setback';
+import { applyEdgeSetbacks } from './wall-setback';
 import {
   getRoadSetbackParams,
   getAdjacentSetbackParams,
@@ -22,12 +30,17 @@ import { validateVolumeInput } from './validation';
 import { calculateShadowConstrainedHeight } from './shadow';
 import { generateShadowProjection } from './shadow-projection';
 import { generateReverseShadow } from './reverse-shadow';
+import { buildShadowBoundary } from './shadow-boundary';
 import { generateBuildingPatterns } from './building-pattern';
 import type { HeightFieldData, ShadowProjectionResult, ReverseShadowResult, BuildingPatternResult } from './types';
 import { MAX_HEIGHT_CAP } from './constants';
 
-/** Grid resolution in meters for sampling height field */
-const GRID_RESOLUTION = 0.5;
+/** Grid resolution in meters for sampling height field. 1m keeps planning-level trends with lower latency. */
+const GRID_RESOLUTION = 1.0;
+/** Target mesh resolution for rendering. Finer than analysis grid to reduce jagged surfaces. */
+const RENDER_MESH_RESOLUTION = 0.25;
+/** Safety cap to avoid excessive mesh point counts on very large sites. */
+const MAX_RENDER_GRID_POINTS = 250_000;
 
 /** Assumed floor height in meters for maxFloors estimation */
 const FLOOR_HEIGHT = 3.0;
@@ -252,6 +265,8 @@ interface HeightField {
   cols: number;
   /** Number of rows (y direction) */
   rows: number;
+  /** Grid spacing in meters */
+  resolution: number;
   /** Height values, row-major [row * cols + col] */
   heights: Float32Array;
   /** Grid origin (min x, min y of bounding box) */
@@ -261,27 +276,182 @@ interface HeightField {
   insideMask: Uint8Array;
 }
 
+interface EnvelopeRestrictionContext {
+  input: VolumeInput;
+  roads: Road[];
+  adjacentEdges: SiteEdge[];
+  northEdges: SiteEdge[];
+  shadowBoundary: Point2D[] | null;
+  northRotation: number;
+  roadParams: RoadSetbackParams;
+  adjParams: AdjacentSetbackParams;
+  northParams: NorthSetbackParams | null;
+  absLimit: number;
+}
+
+function evaluateRoadRestrictionHeight(
+  point: Point2D,
+  roads: Road[],
+  roadParams: RoadSetbackParams,
+  roadFacingWallSetback: number,
+): number {
+  let h = Infinity;
+  const effectiveWidths = getRoadSlopeEffectiveWidthsAtPoint(
+    point,
+    roads,
+    roadParams.applicationDistance,
+  );
+  for (let i = 0; i < roads.length; i++) {
+    const road = roads[i];
+    const roadH = calculateRoadSetbackHeight(
+      point,
+      road,
+      roadParams.slopeRatio,
+      roadParams.applicationDistance,
+      {
+        effectiveRoadWidth: effectiveWidths[i],
+        setbackRelief: getRoadSlopeSetbackRelief(road, roadFacingWallSetback),
+      },
+    );
+    if (roadH < h) h = roadH;
+  }
+  return h;
+}
+
+function getEffectiveWallSetback(zoning: VolumeInput['zoning']): number {
+  return Math.max(0, zoning.wallSetback ?? 0, zoning.districtPlan?.wallSetback ?? 0);
+}
+
+function buildSiteEdgeSetbacks(
+  vertices: Point2D[],
+  roads: Road[],
+  wallSetback: number | null,
+  districtPlanWallSetback?: number,
+): number[] {
+  const baseSetback = Math.max(0, wallSetback ?? 0, districtPlanWallSetback ?? 0);
+  const siteEdges = getSiteEdges(vertices);
+  return siteEdges.map((edge) => {
+    const matchedRoad = matchRoadEdge(edge, roads);
+    const roadSetback = matchedRoad ? getRoadRequiredFrontSetback(matchedRoad) : 0;
+    return baseSetback + roadSetback;
+  });
+}
+
+function evaluateAdjacentRestrictionHeight(
+  point: Point2D,
+  adjacentEdges: SiteEdge[],
+  adjParams: AdjacentSetbackParams,
+): number {
+  let h = Infinity;
+  for (const edge of adjacentEdges) {
+    const adjH = calculateAdjacentSetbackHeight(
+      point,
+      edge.start,
+      edge.end,
+      adjParams.riseHeight,
+      adjParams.slopeRatio,
+    );
+    if (adjH < h) h = adjH;
+  }
+  return h;
+}
+
+function evaluateNorthRestrictionHeight(
+  point: Point2D,
+  northEdges: SiteEdge[],
+  northParams: NorthSetbackParams | null,
+): number {
+  if (northParams === null || northEdges.length === 0) return Infinity;
+
+  let h = Infinity;
+  for (const edge of northEdges) {
+    const northH = calculateNorthSetbackHeight(
+      point,
+      edge.start,
+      edge.end,
+      northParams.riseHeight,
+      northParams.slopeRatio,
+    );
+    if (northH < h) h = northH;
+  }
+  return h;
+}
+
+function evaluateHeightDistrictRestrictionHeight(
+  point: Point2D,
+  context: EnvelopeRestrictionContext,
+): number {
+  if (context.input.zoning.heightDistrict.type === '指定なし') return Infinity;
+
+  let h = Infinity;
+  for (const edge of context.adjacentEdges) {
+    const hdH = calculateHeightDistrictLimit(
+      point,
+      edge.start,
+      edge.end,
+      context.input.zoning.heightDistrict,
+    );
+    if (hdH < h) h = hdH;
+  }
+  for (const edge of context.northEdges) {
+    const hdH = calculateHeightDistrictLimit(
+      point,
+      edge.start,
+      edge.end,
+      context.input.zoning.heightDistrict,
+    );
+    if (hdH < h) h = hdH;
+  }
+  return h;
+}
+
+function evaluateEnvelopeHeightAtPoint(
+  point: Point2D,
+  context: EnvelopeRestrictionContext,
+  includeShadow: boolean,
+): number {
+  let h = context.absLimit;
+
+  const roadH = evaluateRoadRestrictionHeight(
+    point,
+    context.roads,
+    context.roadParams,
+    getEffectiveWallSetback(context.input.zoning),
+  );
+  if (roadH < h) h = roadH;
+
+  const adjacentH = evaluateAdjacentRestrictionHeight(point, context.adjacentEdges, context.adjParams);
+  if (adjacentH < h) h = adjacentH;
+
+  const northH = evaluateNorthRestrictionHeight(point, context.northEdges, context.northParams);
+  if (northH < h) h = northH;
+
+  const districtH = evaluateHeightDistrictRestrictionHeight(point, context);
+  if (districtH < h) h = districtH;
+
+  if (includeShadow && context.input.zoning.shadowRegulation !== null) {
+    const shadowH = calculateShadowConstrainedHeight(
+      point,
+      context.shadowBoundary ?? context.input.site.vertices,
+      context.input.zoning.shadowRegulation,
+      context.input.latitude,
+      context.northRotation,
+    );
+    if (shadowH < h) h = shadowH;
+  }
+
+  return Math.max(0, h);
+}
+
 /**
  * Build a height field grid over the buildable footprint and compute
  * the maximum allowed height at each sample point.
  */
 function buildHeightField(
   buildablePolygon: Point2D[],
-  input: VolumeInput,
-  roads: Road[],
-  adjacentEdges: SiteEdge[],
-  northEdges: SiteEdge[],
-  northRotation: number,
+  context: EnvelopeRestrictionContext,
   includeShadow: boolean = true,
 ): HeightField {
-  const { zoning } = input;
-
-  // Regulation params
-  const roadParams = getRoadSetbackParams(zoning.district);
-  const adjParams = getAdjacentSetbackParams(zoning.district);
-  const northParams = getNorthSetbackParams(zoning.district);
-  const absLimit = getEffectiveAbsoluteHeightLimit(input);
-
   // Bounding box of buildable polygon
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const v of buildablePolygon) {
@@ -314,87 +484,19 @@ function buildHeightField(
       }
 
       insideMask[idx] = 1;
-
-      // Start with absolute height limit
-      let h = absLimit;
-
-      // Road setback (道路斜線制限) - check all roads
-      for (const road of roads) {
-        const roadH = calculateRoadSetbackHeight(
-          point,
-          road,
-          roadParams.slopeRatio,
-          roadParams.applicationDistance,
-        );
-        if (roadH < h) h = roadH;
-      }
-
-      // Adjacent setback (隣地斜線制限) - check adjacent edges only (not north)
-      for (const edge of adjacentEdges) {
-        const adjH = calculateAdjacentSetbackHeight(
-          point,
-          edge.start,
-          edge.end,
-          adjParams.riseHeight,
-          adjParams.slopeRatio,
-        );
-        if (adjH < h) h = adjH;
-      }
-
-      // North setback (北側斜線制限) - only if applicable
-      if (northParams !== null) {
-        for (const edge of northEdges) {
-          const northH = calculateNorthSetbackHeight(
-            point,
-            edge.start,
-            edge.end,
-            northParams.riseHeight,
-            northParams.slopeRatio,
-          );
-          if (northH < h) h = northH;
-        }
-      }
-
-      // Height district (高度地区) - applies to all non-road edges
-      if (input.zoning.heightDistrict.type !== '指定なし') {
-        for (const edge of adjacentEdges) {
-          const hdH = calculateHeightDistrictLimit(
-            point,
-            edge.start,
-            edge.end,
-            input.zoning.heightDistrict,
-          );
-          if (hdH < h) h = hdH;
-        }
-        for (const edge of northEdges) {
-          const hdH = calculateHeightDistrictLimit(
-            point,
-            edge.start,
-            edge.end,
-            input.zoning.heightDistrict,
-          );
-          if (hdH < h) h = hdH;
-        }
-      }
-
-      // Shadow regulation (日影規制) - only if applicable
-      if (includeShadow && input.zoning.shadowRegulation !== null) {
-        const shadowH = calculateShadowConstrainedHeight(
-          point,
-          input.site.vertices,
-          input.zoning.shadowRegulation,
-          input.latitude,
-          northRotation,
-        );
-        if (shadowH < h) h = shadowH;
-      }
-
-      // Ensure non-negative
-      heights[idx] = Math.max(0, h);
+      heights[idx] = evaluateEnvelopeHeightAtPoint(point, context, includeShadow);
     }
   }
 
-  return { cols, rows, heights, originX: minX, originY: minY, insideMask };
+  return {
+    cols,
+    rows,
+    resolution: GRID_RESOLUTION,
+    heights,
+    originX: minX,
+    originY: minY,
+    insideMask,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -413,11 +515,10 @@ interface MeshData {
  * geometry above the actual envelope.
  */
 function buildSetbackHeightField(
-  buildablePolygon: Point2D[],
   combinedHeights: HeightField,
   evaluator: (point: Point2D) => number,
 ): HeightField {
-  const { cols, rows, originX, originY, insideMask } = combinedHeights;
+  const { cols, rows, originX, originY, insideMask, resolution } = combinedHeights;
   const heights = new Float32Array(rows * cols);
 
   for (let row = 0; row < rows; row++) {
@@ -429,8 +530,8 @@ function buildSetbackHeightField(
       }
 
       const point: Point2D = {
-        x: originX + col * GRID_RESOLUTION,
-        y: originY + row * GRID_RESOLUTION,
+        x: originX + col * resolution,
+        y: originY + row * resolution,
       };
 
       const restrictionH = evaluator(point);
@@ -439,7 +540,125 @@ function buildSetbackHeightField(
     }
   }
 
-  return { cols, rows, heights, originX, originY, insideMask };
+  return { cols, rows, resolution, heights, originX, originY, insideMask };
+}
+
+function getFieldExtent(field: HeightField): { width: number; height: number } {
+  return {
+    width: Math.max(0, (field.cols - 1) * field.resolution),
+    height: Math.max(0, (field.rows - 1) * field.resolution),
+  };
+}
+
+function resolveRenderResolution(field: HeightField, targetResolution: number): number {
+  if (targetResolution >= field.resolution) return field.resolution;
+  const { width, height } = getFieldExtent(field);
+  const rawCols = Math.max(1, Math.ceil(width / targetResolution) + 1);
+  const rawRows = Math.max(1, Math.ceil(height / targetResolution) + 1);
+  const rawPoints = rawCols * rawRows;
+  if (rawPoints <= MAX_RENDER_GRID_POINTS) return targetResolution;
+
+  const scale = Math.sqrt(rawPoints / MAX_RENDER_GRID_POINTS);
+  const adjusted = targetResolution * scale;
+  return Math.min(field.resolution, adjusted);
+}
+
+function sampleHeightBilinear(field: HeightField, x: number, y: number): number {
+  const gx = (x - field.originX) / field.resolution;
+  const gy = (y - field.originY) / field.resolution;
+
+  const c0 = Math.max(0, Math.min(field.cols - 1, Math.floor(gx)));
+  const r0 = Math.max(0, Math.min(field.rows - 1, Math.floor(gy)));
+  const c1 = Math.min(field.cols - 1, c0 + 1);
+  const r1 = Math.min(field.rows - 1, r0 + 1);
+  const tx = Math.max(0, Math.min(1, gx - c0));
+  const ty = Math.max(0, Math.min(1, gy - r0));
+
+  const corners = [
+    { row: r0, col: c0, weight: (1 - tx) * (1 - ty) },
+    { row: r0, col: c1, weight: tx * (1 - ty) },
+    { row: r1, col: c0, weight: (1 - tx) * ty },
+    { row: r1, col: c1, weight: tx * ty },
+  ];
+
+  let weightedHeight = 0;
+  let totalWeight = 0;
+  for (const corner of corners) {
+    const idx = corner.row * field.cols + corner.col;
+    if (field.insideMask[idx] === 0) continue;
+    weightedHeight += field.heights[idx] * corner.weight;
+    totalWeight += corner.weight;
+  }
+  if (totalWeight > 1e-8) return weightedHeight / totalWeight;
+
+  // Fallback near boundary when interpolation corners are outside.
+  const nearCol = Math.max(0, Math.min(field.cols - 1, Math.round(gx)));
+  const nearRow = Math.max(0, Math.min(field.rows - 1, Math.round(gy)));
+  let nearestDistance = Infinity;
+  let nearestHeight = 0;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const row = nearRow + dr;
+      const col = nearCol + dc;
+      if (row < 0 || row >= field.rows || col < 0 || col >= field.cols) continue;
+      const idx = row * field.cols + col;
+      if (field.insideMask[idx] === 0) continue;
+      const dRow = row - gy;
+      const dCol = col - gx;
+      const dist = dRow * dRow + dCol * dCol;
+      if (dist < nearestDistance) {
+        nearestDistance = dist;
+        nearestHeight = field.heights[idx];
+      }
+    }
+  }
+  return nearestHeight;
+}
+
+type RenderHeightCap = (point: Point2D, sampledHeight: number) => number;
+
+function buildRenderHeightField(
+  field: HeightField,
+  buildablePolygon: Point2D[],
+  targetResolution: number,
+  capHeight?: RenderHeightCap,
+): HeightField {
+  const renderResolution = resolveRenderResolution(field, targetResolution);
+  if (renderResolution >= field.resolution - 1e-8) return field;
+
+  const { width, height } = getFieldExtent(field);
+  const cols = Math.max(1, Math.ceil(width / renderResolution) + 1);
+  const rows = Math.max(1, Math.ceil(height / renderResolution) + 1);
+  const heights = new Float32Array(rows * cols);
+  const insideMask = new Uint8Array(rows * cols);
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const idx = row * cols + col;
+      const point: Point2D = {
+        x: field.originX + col * renderResolution,
+        y: field.originY + row * renderResolution,
+      };
+      if (!isInsidePolygonOrBoundary(point, buildablePolygon)) continue;
+
+      insideMask[idx] = 1;
+      const sampledHeight = sampleHeightBilinear(field, point.x, point.y);
+      const cappedHeight = capHeight
+        ? Math.min(sampledHeight, capHeight(point, sampledHeight))
+        : sampledHeight;
+      heights[idx] = Math.max(0, cappedHeight);
+    }
+  }
+
+  return {
+    cols,
+    rows,
+    resolution: renderResolution,
+    heights,
+    originX: field.originX,
+    originY: field.originY,
+    insideMask,
+  };
 }
 
 /**
@@ -449,7 +668,7 @@ function buildSetbackHeightField(
  *  - Ground plane vertices at z=0 (for side walls where height drops to 0)
  */
 function heightFieldToMesh(field: HeightField): MeshData {
-  const { cols, rows, heights, originX, originY, insideMask } = field;
+  const { cols, rows, heights, originX, originY, insideMask, resolution } = field;
 
   // Pre-allocate vertex and index arrays (upper bounds)
   // Each vertex: x, y, z (3 floats)
@@ -469,9 +688,9 @@ function heightFieldToMesh(field: HeightField): MeshData {
       vertexMap[idx] = vertexCount;
       // Three.js coords: X=east, Y=up(height), Z=north
       vertexList.push(
-        originX + col * GRID_RESOLUTION,  // X (east)
+        originX + col * resolution,       // X (east)
         heights[idx],                      // Y (up = height)
-        originY + row * GRID_RESOLUTION,   // Z (north)
+        originY + row * resolution,       // Z (north)
       );
       vertexCount++;
     }
@@ -486,9 +705,9 @@ function heightFieldToMesh(field: HeightField): MeshData {
 
       // Three.js coords: ground plane at Y=0
       vertexList.push(
-        originX + col * GRID_RESOLUTION,  // X (east)
+        originX + col * resolution,       // X (east)
         0,                                 // Y (ground level)
-        originY + row * GRID_RESOLUTION,   // Z (north)
+        originY + row * resolution,       // Z (north)
       );
       vertexCount++;
     }
@@ -596,40 +815,82 @@ function heightFieldToMesh(field: HeightField): MeshData {
       for (const { dr, dc } of neighbors) {
         const nr = row + dr;
         const nc = col + dc;
-        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) {
-          // Out of grid bounds = boundary
-          // Need an adjacent inside point along the boundary to form a wall quad
-          continue;
+        const outOfBounds = nr < 0 || nr >= rows || nc < 0 || nc >= cols;
+        if (!outOfBounds) {
+          const nIdx = nr * cols + nc;
+          if (insideMask[nIdx] !== 0) continue; // not a boundary
         }
-        const nIdx = nr * cols + nc;
-        if (insideMask[nIdx] !== 0) continue; // not a boundary
 
         // This is a boundary edge. Find the two vertices that form this edge.
-        // For a proper wall, we need the next vertex along the boundary direction.
-        // We handle this by looking at the perpendicular neighbors.
-        // For left/right walls (dc != 0): the edge runs vertically, check row+1
-        // For up/down walls (dr != 0): the edge runs horizontally, check col+1
+        // Prefer +direction pairing; if unavailable (grid edge), fallback to -direction.
         let adjRow: number, adjCol: number;
         if (dc !== 0) {
-          // Vertical edge: pair with (row+1, col)
-          adjRow = row + 1;
+          // Vertical edge: pair with (row+1, col) or fallback (row-1, col)
+          const candRows = [row + 1, row - 1];
+          let chosen: number | null = null;
+          for (const cr of candRows) {
+            if (cr < 0 || cr >= rows) continue;
+            const cIdx = cr * cols + col;
+            if (insideMask[cIdx] === 0) continue;
+            chosen = cr;
+            break;
+          }
+          if (chosen === null) continue;
+          adjRow = chosen;
           adjCol = col;
         } else {
-          // Horizontal edge: pair with (row, col+1)
+          // Horizontal edge: pair with (row, col+1) or fallback (row, col-1)
+          const candCols = [col + 1, col - 1];
+          let chosen: number | null = null;
+          for (const cc of candCols) {
+            if (cc < 0 || cc >= cols) continue;
+            const cIdx = row * cols + cc;
+            if (insideMask[cIdx] === 0) continue;
+            chosen = cc;
+            break;
+          }
+          if (chosen === null) continue;
           adjRow = row;
-          adjCol = col + 1;
+          adjCol = chosen;
         }
 
-        if (adjRow < 0 || adjRow >= rows || adjCol < 0 || adjCol >= cols) continue;
         const adjIdx = adjRow * cols + adjCol;
-        if (insideMask[adjIdx] === 0) continue;
+        // Avoid duplicate quads for the same boundary segment.
+        if (adjIdx <= idx) continue;
 
         const adjTopV = vertexMap[adjIdx];
         const adjGroundV = groundVertexOffset + adjTopV;
 
-        // Quad: (topV, adjTopV, adjGroundV, groundV) -> 2 triangles
-        indexList.push(topV, adjTopV, adjGroundV);
-        indexList.push(topV, adjGroundV, groundV);
+        // Enforce outward-facing winding to avoid mixed front/back shading.
+        const p0x = originX + col * resolution;
+        const p0y = heights[idx];
+        const p0z = originY + row * resolution;
+        const p1x = originX + adjCol * resolution;
+        const p1y = heights[adjIdx];
+        const p1z = originY + adjRow * resolution;
+        const p2x = p1x;
+        const p2y = 0;
+        const p2z = p1z;
+
+        const ux = p1x - p0x;
+        const uy = p1y - p0y;
+        const uz = p1z - p0z;
+        const vx = p2x - p0x;
+        const vy = p2y - p0y;
+        const vz = p2z - p0z;
+        const nx = uy * vz - uz * vy;
+        const nz = ux * vy - uy * vx;
+        const outwardX = dc;
+        const outwardZ = dr;
+        const outwardDot = nx * outwardX + nz * outwardZ;
+
+        if (outwardDot < 0) {
+          indexList.push(topV, adjGroundV, adjTopV);
+          indexList.push(topV, groundV, adjGroundV);
+        } else {
+          indexList.push(topV, adjTopV, adjGroundV);
+          indexList.push(topV, adjGroundV, groundV);
+        }
       }
     }
   }
@@ -669,8 +930,17 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
   const maxCoverageArea = calculateMaxCoverage(site, zoning);
   const maxFloorArea = calculateMaxFloorArea(site, zoning, roads);
 
-  // 2. Apply wall setback to get buildable footprint
-  const buildablePolygon = applyWallSetback(site.vertices, zoning.wallSetback);
+  // 2. Apply wall setback + confirmed road-front setbacks to get buildable footprint
+  const edgeSetbacks = buildSiteEdgeSetbacks(
+    site.vertices,
+    roads,
+    zoning.wallSetback,
+    zoning.districtPlan?.wallSetback,
+  );
+  const buildablePolygon = applyEdgeSetbacks(site.vertices, edgeSetbacks);
+  const hasVisibleBuildableInset = edgeSetbacks.some((setback) => setback > 1e-6);
+  const shadowBoundary =
+    zoning.shadowRegulation !== null ? buildShadowBoundary(site.vertices, roads) : null;
 
   // 3. Classify edges
   const siteEdges = getSiteEdges(site.vertices);
@@ -692,14 +962,27 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
   // Compute north rotation for bearing-based calculations
   const northRotation = computeNorthRotation(roads, site.vertices) ?? 0;
 
+  const roadParams = getRoadSetbackParams(zoning.district);
+  const adjParams = getAdjacentSetbackParams(zoning.district);
+  const northParams = getNorthSetbackParams(zoning.district);
+  const absLimit = getEffectiveAbsoluteHeightLimit(input);
+  const restrictionContext: EnvelopeRestrictionContext = {
+    input,
+    roads,
+    adjacentEdges: adjacentOnlyEdges,
+    northEdges,
+    shadowBoundary,
+    northRotation,
+    roadParams,
+    adjParams,
+    northParams,
+    absLimit,
+  };
+
   // 4. Build combined height field (minimum of all restrictions)
   const combinedField = buildHeightField(
     buildablePolygon,
-    input,
-    roads,
-    adjacentOnlyEdges,
-    northEdges,
-    northRotation,
+    restrictionContext,
     true,
   );
 
@@ -708,11 +991,7 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
   if (zoning.shadowRegulation !== null) {
     nonShadowField = buildHeightField(
       buildablePolygon,
-      input,
-      roads,
-      adjacentOnlyEdges,
-      northEdges,
-      northRotation,
+      restrictionContext,
       false,
     );
   }
@@ -725,7 +1004,6 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     }
   }
   // Apply absolute height limit cap
-  const absLimit = getEffectiveAbsoluteHeightLimit(input);
   if (maxHeight > absLimit) maxHeight = absLimit;
 
   // Calculate maxFloors from user-provided floor heights or default
@@ -745,113 +1023,133 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     maxFloors = Math.floor(maxHeight / FLOOR_HEIGHT);
   }
 
-  // 6. Convert combined height field to mesh
-  const combinedMesh = heightFieldToMesh(combinedField);
+  // 6. Convert combined height field to mesh (render with finer sampling for smoother surfaces)
+  const combinedRenderField = buildRenderHeightField(
+    combinedField,
+    buildablePolygon,
+    RENDER_MESH_RESOLUTION,
+    (point, sampledHeight) => Math.min(
+      sampledHeight,
+      evaluateEnvelopeHeightAtPoint(point, restrictionContext, false),
+    ),
+  );
+  const combinedMesh = heightFieldToMesh(combinedRenderField);
 
   // 7. Build individual setback envelope meshes for layer toggling
-
-  // Get regulation params for individual evaluations
-  const roadParams = getRoadSetbackParams(zoning.district);
-  const adjParams = getAdjacentSetbackParams(zoning.district);
-  const northParams = getNorthSetbackParams(zoning.district);
+  const clampToCombinedEnvelope = (point: Point2D, sampledHeight: number): number =>
+    Math.min(
+      sampledHeight,
+      sampleHeightBilinear(combinedField, point.x, point.y),
+      evaluateEnvelopeHeightAtPoint(point, restrictionContext, false),
+    );
 
   // Road setback envelope
   let roadEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
   if (roads.length > 0) {
+    const roadRestriction = (point: Point2D) =>
+      evaluateRoadRestrictionHeight(
+        point,
+        roads,
+        roadParams,
+        getEffectiveWallSetback(input.zoning),
+      );
     const roadField = buildSetbackHeightField(
-      buildablePolygon,
       combinedField,
-      (point) => {
-        let h = Infinity;
-        for (const road of roads) {
-          const rh = calculateRoadSetbackHeight(
-            point,
-            road,
-            roadParams.slopeRatio,
-            roadParams.applicationDistance,
-          );
-          if (rh < h) h = rh;
-        }
-        return h;
-      },
+      roadRestriction,
     );
-    roadEnvelope = heightFieldToMesh(roadField);
+    const roadRenderField = buildRenderHeightField(
+      roadField,
+      buildablePolygon,
+      RENDER_MESH_RESOLUTION,
+      (point, sampledHeight) => Math.min(
+        roadRestriction(point),
+        clampToCombinedEnvelope(point, sampledHeight),
+      ),
+    );
+    roadEnvelope = heightFieldToMesh(roadRenderField);
   }
 
   // Adjacent setback envelope
   let adjacentEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
   if (adjacentOnlyEdges.length > 0) {
+    const adjacentRestriction = (point: Point2D) =>
+      evaluateAdjacentRestrictionHeight(point, adjacentOnlyEdges, adjParams);
     const adjField = buildSetbackHeightField(
-      buildablePolygon,
       combinedField,
-      (point) => {
-        let h = Infinity;
-        for (const edge of adjacentOnlyEdges) {
-          const ah = calculateAdjacentSetbackHeight(
-            point,
-            edge.start,
-            edge.end,
-            adjParams.riseHeight,
-            adjParams.slopeRatio,
-          );
-          if (ah < h) h = ah;
-        }
-        return h;
-      },
+      adjacentRestriction,
     );
-    adjacentEnvelope = heightFieldToMesh(adjField);
+    const adjacentRenderField = buildRenderHeightField(
+      adjField,
+      buildablePolygon,
+      RENDER_MESH_RESOLUTION,
+      (point, sampledHeight) => Math.min(
+        adjacentRestriction(point),
+        clampToCombinedEnvelope(point, sampledHeight),
+      ),
+    );
+    adjacentEnvelope = heightFieldToMesh(adjacentRenderField);
   }
 
   // North setback envelope
   let northEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
   if (northParams !== null && northEdges.length > 0) {
+    const northRestriction = (point: Point2D) =>
+      evaluateNorthRestrictionHeight(point, northEdges, northParams);
     const northField = buildSetbackHeightField(
-      buildablePolygon,
       combinedField,
-      (point) => {
-        let h = Infinity;
-        for (const edge of northEdges) {
-          const nh = calculateNorthSetbackHeight(
-            point,
-            edge.start,
-            edge.end,
-            northParams.riseHeight,
-            northParams.slopeRatio,
-          );
-          if (nh < h) h = nh;
-        }
-        return h;
-      },
+      northRestriction,
     );
-    northEnvelope = heightFieldToMesh(northField);
+    const northRenderField = buildRenderHeightField(
+      northField,
+      buildablePolygon,
+      RENDER_MESH_RESOLUTION,
+      (point, sampledHeight) => Math.min(
+        northRestriction(point),
+        clampToCombinedEnvelope(point, sampledHeight),
+      ),
+    );
+    northEnvelope = heightFieldToMesh(northRenderField);
   }
 
   // Absolute height envelope (flat plane at the limit)
   let absoluteHeightEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
   if (zoning.absoluteHeightLimit !== null) {
     const absField = buildSetbackHeightField(
-      buildablePolygon,
       combinedField,
       () => zoning.absoluteHeightLimit!,
     );
-    absoluteHeightEnvelope = heightFieldToMesh(absField);
+    const absoluteRenderField = buildRenderHeightField(
+      absField,
+      buildablePolygon,
+      RENDER_MESH_RESOLUTION,
+      (point, sampledHeight) => Math.min(
+        zoning.absoluteHeightLimit!,
+        clampToCombinedEnvelope(point, sampledHeight),
+      ),
+    );
+    absoluteHeightEnvelope = heightFieldToMesh(absoluteRenderField);
   }
 
   // Shadow regulation envelope
   let shadowEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
   if (zoning.shadowRegulation !== null) {
     const shadowField = buildSetbackHeightField(
-      buildablePolygon,
       combinedField,
       (point) => calculateShadowConstrainedHeight(
         point,
-        site.vertices,
+        shadowBoundary ?? site.vertices,
         zoning.shadowRegulation!,
         input.latitude,
         northRotation,
       ),
     );
-    shadowEnvelope = heightFieldToMesh(shadowField);
+    const shadowRenderField = buildRenderHeightField(
+      shadowField,
+      buildablePolygon,
+      RENDER_MESH_RESOLUTION,
+      clampToCombinedEnvelope,
+    );
+    shadowEnvelope = heightFieldToMesh(shadowRenderField);
   }
 
   // Shadow projection analysis (ground plane visualization)
@@ -862,13 +1160,13 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
       rows: combinedField.rows,
       originX: combinedField.originX,
       originY: combinedField.originY,
-      resolution: GRID_RESOLUTION,
+      resolution: combinedField.resolution,
       heights: combinedField.heights,
       insideMask: combinedField.insideMask,
     };
     shadowProjection = generateShadowProjection(
       heightFieldData,
-      site.vertices,
+      shadowBoundary ?? site.vertices,
       zoning.shadowRegulation,
       input.latitude,
       northRotation,
@@ -879,8 +1177,8 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
   let reverseShadow: ReverseShadowResult | null = null;
   if (zoning.shadowRegulation !== null) {
     reverseShadow = generateReverseShadow(
-      site.vertices,
       buildablePolygon,
+      shadowBoundary ?? site.vertices,
       zoning.shadowRegulation,
       input.latitude,
       northRotation,
@@ -896,13 +1194,14 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
       rows: sourceField.rows,
       originX: sourceField.originX,
       originY: sourceField.originY,
-      resolution: GRID_RESOLUTION,
+      resolution: sourceField.resolution,
       heights: sourceField.heights,
       insideMask: sourceField.insideMask,
     };
     buildingPatterns = generateBuildingPatterns(
       input,
       buildablePolygon,
+      shadowBoundary ?? site.vertices,
       northRotation,
       envelopeHF,
     );
@@ -925,13 +1224,14 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     shadowProjection,
     reverseShadow,
     buildingPatterns,
-    buildablePolygon: zoning.wallSetback !== null ? buildablePolygon : null,
+    buildablePolygon: hasVisibleBuildableInset ? buildablePolygon : null,
+    shadowBoundary,
     heightFieldData: zoning.shadowRegulation !== null ? {
       cols: combinedField.cols,
       rows: combinedField.rows,
       originX: combinedField.originX,
       originY: combinedField.originY,
-      resolution: GRID_RESOLUTION,
+      resolution: combinedField.resolution,
       heights: combinedField.heights,
       insideMask: combinedField.insideMask,
     } : null,

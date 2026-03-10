@@ -92,6 +92,24 @@ export function isInsidePolygon(point: Point2D, polygon: Point2D[]): boolean {
   return inside;
 }
 
+/** Check if a point is inside a polygon or lies on its boundary. */
+export function isInsidePolygonOrBoundary(
+  point: Point2D,
+  polygon: Point2D[],
+  tolerance = 1e-6,
+): boolean {
+  if (isInsidePolygon(point, polygon)) return true;
+
+  const n = polygon.length;
+  for (let i = 0; i < n; i++) {
+    if (distanceToSegment(point, polygon[i], polygon[(i + 1) % n]) <= tolerance) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Check if a polygon is simple (no self-intersections).
  * O(n²) segment-vs-segment test, skipping adjacent edges.

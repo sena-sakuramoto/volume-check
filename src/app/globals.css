@@ -3,40 +3,43 @@
 @layer base {
   :root {
     /* App design tokens */
-    --app-bg: #0b0d10;
-    --app-bg-strong: #0a0c10;
-    --app-surface: #11151d;
-    --app-surface-strong: #171c28;
-    --app-border: rgba(255, 255, 255, 0.08);
-    --app-border-strong: rgba(255, 255, 255, 0.16);
-    --app-text: #f5f6f8;
-    --app-muted: #9aa3b2;
-    --app-muted-strong: #c1c7d4;
-    --app-accent: #5de4c7;
-    --app-accent-strong: #2ec4a6;
-    --app-warm: #f4b860;
-    --app-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    --app-bg: #f5f1e8;
+    --app-bg-strong: #ece4d5;
+    --app-surface: #fffdf8;
+    --app-surface-strong: #f9f5ee;
+    --app-border: rgba(34, 51, 59, 0.12);
+    --app-border-strong: rgba(34, 51, 59, 0.2);
+    --app-text: #1b2a31;
+    --app-muted: #63747d;
+    --app-muted-strong: #43545d;
+    --app-accent: #0f8c83;
+    --app-accent-strong: #0d6f68;
+    --app-warm: #c79046;
+    --app-shadow: 0 22px 48px rgba(24, 37, 43, 0.12);
+    --font-display: "Space Grotesk", "Aptos", "Segoe UI", sans-serif;
+    --font-body: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    --font-mono: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
 
     /* shadcn/ui CSS variables - mapped to app design tokens */
-    --background: 220 25% 4%;
-    --foreground: 220 20% 96%;
-    --card: 220 25% 8%;
-    --card-foreground: 220 20% 96%;
-    --popover: 220 25% 8%;
-    --popover-foreground: 220 20% 96%;
-    --primary: 166 68% 63%;
-    --primary-foreground: 220 25% 4%;
-    --secondary: 220 20% 14%;
-    --secondary-foreground: 220 20% 96%;
-    --muted: 220 20% 14%;
-    --muted-foreground: 216 14% 65%;
-    --accent: 220 20% 14%;
-    --accent-foreground: 220 20% 96%;
-    --destructive: 0 84% 60%;
+    --background: 39 39% 95%;
+    --foreground: 202 29% 15%;
+    --card: 42 55% 99%;
+    --card-foreground: 202 29% 15%;
+    --popover: 42 55% 99%;
+    --popover-foreground: 202 29% 15%;
+    --primary: 176 80% 31%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 38 31% 91%;
+    --secondary-foreground: 202 24% 20%;
+    --muted: 36 24% 91%;
+    --muted-foreground: 201 14% 42%;
+    --accent: 171 24% 91%;
+    --accent-foreground: 202 24% 20%;
+    --destructive: 1 62% 49%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 10% 16%;
-    --input: 220 10% 16%;
-    --ring: 166 68% 63%;
+    --border: 35 22% 81%;
+    --input: 35 22% 81%;
+    --ring: 176 80% 31%;
     --radius: 0.625rem;
   }
 }
@@ -71,8 +74,8 @@
 
 body {
   background:
-    radial-gradient(1200px 680px at 85% -10%, rgba(93, 228, 199, 0.14), transparent 60%),
-    radial-gradient(900px 520px at 5% 15%, rgba(244, 184, 96, 0.10), transparent 55%),
+    radial-gradient(1180px 700px at 88% -12%, rgba(15, 140, 131, 0.16), transparent 62%),
+    radial-gradient(980px 560px at 10% 14%, rgba(199, 144, 70, 0.13), transparent 58%),
     var(--app-bg);
   color: var(--app-text);
   font-family: var(--font-body), "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
@@ -89,10 +92,27 @@ h1, h2, h3 {
 }
 
 .app-panel {
-  background: linear-gradient(180deg, rgba(17, 21, 29, 0.92), rgba(12, 15, 22, 0.92));
-  border: 1px solid var(--app-border);
+  background: linear-gradient(180deg, rgba(255, 253, 248, 0.94), rgba(249, 245, 238, 0.96));
+  border: 1px solid var(--app-border-strong);
   border-radius: 18px;
   box-shadow: var(--app-shadow);
+  backdrop-filter: blur(12px);
+}
+
+.ui-surface {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 251, 245, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  box-shadow: 0 14px 30px rgba(24, 37, 43, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.ui-surface-soft {
+  background: linear-gradient(180deg, rgba(255, 252, 246, 0.82), rgba(246, 239, 227, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 20px;
+  box-shadow: 0 10px 24px rgba(24, 37, 43, 0.08);
+  backdrop-filter: blur(10px);
 }
 
 @media print {

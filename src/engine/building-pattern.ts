@@ -18,8 +18,9 @@ import { MAX_HEIGHT_CAP } from './constants';
 // Constants
 // ---------------------------------------------------------------------------
 
-const BUILDING_GRID_RESOLUTION = 0.5;
-const RECEPTOR_GRID_RESOLUTION = 2.0;
+// Coarser analysis grid improves runtime significantly while keeping trend-level comparisons stable.
+const BUILDING_GRID_RESOLUTION = 1.0;
+const RECEPTOR_GRID_RESOLUTION = 3.0;
 const RECEPTOR_GRID_PADDING = 15;
 const FLOOR_HEIGHT = 3.0;
 const FLOOR_HEIGHT_EPS = 0.01;
@@ -31,10 +32,20 @@ const MID_HIGH_RISE_INSET = 5.0;
 // HeightFieldData builder for a uniform-height footprint
 // ---------------------------------------------------------------------------
 
-function buildUniformHeightField(
+interface UniformHeightFieldTemplate {
+  cols: number;
+  rows: number;
+  originX: number;
+  originY: number;
+  resolution: number;
+  total: number;
+  insideMask: Uint8Array;
+  insideIndices: Uint32Array;
+}
+
+function buildUniformHeightFieldTemplate(
   footprint: Point2D[],
-  height: number,
-): HeightFieldData {
+): UniformHeightFieldTemplate {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const v of footprint) {
     if (v.x < minX) minX = v.x;
@@ -46,9 +57,8 @@ function buildUniformHeightField(
   const cols = Math.max(1, Math.ceil((maxX - minX) / BUILDING_GRID_RESOLUTION) + 1);
   const rows = Math.max(1, Math.ceil((maxY - minY) / BUILDING_GRID_RESOLUTION) + 1);
   const total = rows * cols;
-
-  const heights = new Float32Array(total);
   const insideMask = new Uint8Array(total);
+  const insideIndices: number[] = [];
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -58,8 +68,8 @@ function buildUniformHeightField(
         y: minY + row * BUILDING_GRID_RESOLUTION,
       };
       if (isInsidePolygon(pt, footprint)) {
-        heights[idx] = height;
         insideMask[idx] = 1;
+        insideIndices.push(idx);
       }
     }
   }
@@ -70,9 +80,38 @@ function buildUniformHeightField(
     originX: minX,
     originY: minY,
     resolution: BUILDING_GRID_RESOLUTION,
-    heights,
+    total,
     insideMask,
+    insideIndices: Uint32Array.from(insideIndices),
   };
+}
+
+function buildUniformHeightFieldFromTemplate(
+  template: UniformHeightFieldTemplate,
+  height: number,
+): HeightFieldData {
+  const heights = new Float32Array(template.total);
+  for (let i = 0; i < template.insideIndices.length; i++) {
+    heights[template.insideIndices[i]] = height;
+  }
+
+  return {
+    cols: template.cols,
+    rows: template.rows,
+    originX: template.originX,
+    originY: template.originY,
+    resolution: template.resolution,
+    heights,
+    insideMask: template.insideMask,
+  };
+}
+
+function buildUniformHeightField(
+  footprint: Point2D[],
+  height: number,
+): HeightFieldData {
+  const template = buildUniformHeightFieldTemplate(footprint);
+  return buildUniformHeightFieldFromTemplate(template, height);
 }
 
 // ---------------------------------------------------------------------------
@@ -114,9 +153,9 @@ interface ReceptorPoint {
   distToBoundary: number;
 }
 
-function buildReceptorGrid(siteVertices: Point2D[]): ReceptorPoint[] {
+function buildReceptorGrid(measurementBoundary: Point2D[]): ReceptorPoint[] {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const v of siteVertices) {
+  for (const v of measurementBoundary) {
     if (v.x < minX) minX = v.x;
     if (v.y < minY) minY = v.y;
     if (v.x > maxX) maxX = v.x;
@@ -127,7 +166,7 @@ function buildReceptorGrid(siteVertices: Point2D[]): ReceptorPoint[] {
   maxX += RECEPTOR_GRID_PADDING;
   maxY += RECEPTOR_GRID_PADDING;
 
-  const n = siteVertices.length;
+  const n = measurementBoundary.length;
   const receptors: ReceptorPoint[] = [];
 
   const cols = Math.max(1, Math.ceil((maxX - minX) / RECEPTOR_GRID_RESOLUTION) + 1);
@@ -139,13 +178,16 @@ function buildReceptorGrid(siteVertices: Point2D[]): ReceptorPoint[] {
       const rx = minX + col * RECEPTOR_GRID_RESOLUTION;
       const pt: Point2D = { x: rx, y: ry };
 
-      // Only consider points OUTSIDE the site boundary
-      if (isInsidePolygon(pt, siteVertices)) continue;
+      if (isInsidePolygon(pt, measurementBoundary)) continue;
 
       // Compute distance to nearest boundary edge
       let minDist = Infinity;
       for (let i = 0; i < n; i++) {
-        const d = distanceToSegment(pt, siteVertices[i], siteVertices[(i + 1) % n]);
+        const d = distanceToSegment(
+          pt,
+          measurementBoundary[i],
+          measurementBoundary[(i + 1) % n],
+        );
         if (d < minDist) minDist = d;
       }
 
@@ -166,14 +208,14 @@ function buildReceptorGrid(siteVertices: Point2D[]): ReceptorPoint[] {
 export function evaluateShadowCompliance(
   footprint: Point2D[],
   height: number,
-  siteVertices: Point2D[],
+  measurementBoundary: Point2D[],
   shadowReg: ShadowRegulation,
   latitude: number,
   northRotation: number,
 ): { passes: boolean; worstHoursAt5m: number; worstHoursAt10m: number } {
   const hf = buildUniformHeightField(footprint, height);
   const { steps, timeStepHours } = precomputeSolarSteps(latitude);
-  const receptors = buildReceptorGrid(siteVertices);
+  const receptors = buildReceptorGrid(measurementBoundary);
 
   if (steps.length === 0 || receptors.length === 0) {
     return { passes: true, worstHoursAt5m: 0, worstHoursAt10m: 0 };
@@ -250,10 +292,71 @@ interface ShadowEvalCache {
   timeStepHours: number;
 }
 
-function buildShadowEvalCache(siteVertices: Point2D[], latitude: number): ShadowEvalCache {
-  const receptors = buildReceptorGrid(siteVertices);
+function buildShadowEvalCache(measurementBoundary: Point2D[], latitude: number): ShadowEvalCache {
+  const receptors = buildReceptorGrid(measurementBoundary);
   const { steps, timeStepHours } = precomputeSolarSteps(latitude);
   return { receptors, steps, timeStepHours };
+}
+
+interface FindMaxHeightResult {
+  maxHeight: number;
+  maxFloors: number;
+  footprintArea: number;
+  totalFloorArea: number;
+  compliance: { passes: boolean; worstHoursAt5m: number; worstHoursAt10m: number };
+}
+
+const FIND_MAX_HEIGHT_CACHE_LIMIT = 256;
+const findMaxHeightCache = new Map<string, FindMaxHeightResult>();
+
+function pointListKey(points: Point2D[]): string {
+  return points
+    .map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`)
+    .join(';');
+}
+
+function floorHeightsKey(floorHeights?: number[]): string {
+  if (!floorHeights || floorHeights.length === 0) return '';
+  return floorHeights.map((h) => h.toFixed(3)).join(',');
+}
+
+function makeFindMaxHeightCacheKey(
+  footprint: Point2D[],
+  measurementBoundary: Point2D[],
+  shadowReg: ShadowRegulation,
+  latitude: number,
+  northRotation: number,
+  heightCap: number,
+  floorHeights?: number[],
+): string {
+  return [
+    pointListKey(footprint),
+    pointListKey(measurementBoundary),
+    shadowReg.measurementHeight.toFixed(3),
+    shadowReg.maxHoursAt5m.toFixed(3),
+    shadowReg.maxHoursAt10m.toFixed(3),
+    latitude.toFixed(6),
+    northRotation.toFixed(6),
+    heightCap.toFixed(3),
+    floorHeightsKey(floorHeights),
+  ].join('|');
+}
+
+function cloneFindMaxHeightResult(result: FindMaxHeightResult): FindMaxHeightResult {
+  return {
+    ...result,
+    compliance: { ...result.compliance },
+  };
+}
+
+function rememberFindMaxHeightResult(key: string, result: FindMaxHeightResult): void {
+  if (findMaxHeightCache.size >= FIND_MAX_HEIGHT_CACHE_LIMIT) {
+    const firstKey = findMaxHeightCache.keys().next().value;
+    if (firstKey) {
+      findMaxHeightCache.delete(firstKey);
+    }
+  }
+  findMaxHeightCache.set(key, cloneFindMaxHeightResult(result));
 }
 
 function computeMaxFloors(maxHeight: number, floorHeights?: number[]): number {
@@ -383,7 +486,7 @@ function buildPatternResult(
 
 export function findMaxHeightForPattern(
   footprint: Point2D[],
-  siteVertices: Point2D[],
+  measurementBoundary: Point2D[],
   shadowReg: ShadowRegulation,
   latitude: number,
   northRotation: number,
@@ -396,8 +499,22 @@ export function findMaxHeightForPattern(
   totalFloorArea: number;
   compliance: { passes: boolean; worstHoursAt5m: number; worstHoursAt10m: number };
 } {
-  const cache = buildShadowEvalCache(siteVertices, latitude);
-  return findMaxHeightForPatternWithCache(
+  const cacheKey = makeFindMaxHeightCacheKey(
+    footprint,
+    measurementBoundary,
+    shadowReg,
+    latitude,
+    northRotation,
+    heightCap,
+    floorHeights,
+  );
+  const cached = findMaxHeightCache.get(cacheKey);
+  if (cached) {
+    return cloneFindMaxHeightResult(cached);
+  }
+
+  const cache = buildShadowEvalCache(measurementBoundary, latitude);
+  const result = findMaxHeightForPatternWithCache(
     footprint,
     shadowReg,
     northRotation,
@@ -405,6 +522,8 @@ export function findMaxHeightForPattern(
     cache,
     floorHeights,
   );
+  rememberFindMaxHeightResult(cacheKey, result);
+  return cloneFindMaxHeightResult(result);
 }
 
 function findMaxHeightForPatternWithCache(
@@ -414,13 +533,7 @@ function findMaxHeightForPatternWithCache(
   heightCap: number,
   cache: ShadowEvalCache,
   floorHeights?: number[],
-): {
-  maxHeight: number;
-  maxFloors: number;
-  footprintArea: number;
-  totalFloorArea: number;
-  compliance: { passes: boolean; worstHoursAt5m: number; worstHoursAt10m: number };
-} {
+): FindMaxHeightResult {
   const area = polygonArea(footprint);
   const roundedArea = Math.round(area * 100) / 100;
   const cap = Math.min(Math.max(heightCap, 0), MAX_HEIGHT_CAP);
@@ -436,10 +549,11 @@ function findMaxHeightForPatternWithCache(
   }
 
   const { receptors, steps, timeStepHours } = cache;
+  const template = buildUniformHeightFieldTemplate(footprint);
 
   // Inner evaluation (avoids rebuilding receptors/steps)
   function evalAtHeight(h: number): { passes: boolean; worstHoursAt5m: number; worstHoursAt10m: number } {
-    const hf = buildUniformHeightField(footprint, h);
+    const hf = buildUniformHeightFieldFromTemplate(template, h);
 
     if (steps.length === 0 || receptors.length === 0) {
       return { passes: true, worstHoursAt5m: 0, worstHoursAt10m: 0 };
@@ -478,10 +592,51 @@ function findMaxHeightForPatternWithCache(
     return { passes, worstHoursAt5m: worstAt5m, worstHoursAt10m: worstAt10m };
   }
 
+  function evalPassAtHeight(h: number): boolean {
+    const hf = buildUniformHeightFieldFromTemplate(template, h);
+
+    if (steps.length === 0 || receptors.length === 0) {
+      return true;
+    }
+
+    for (const r of receptors) {
+      const limit =
+        r.distToBoundary >= 10
+          ? Math.min(shadowReg.maxHoursAt5m, shadowReg.maxHoursAt10m)
+          : r.distToBoundary >= 5
+            ? shadowReg.maxHoursAt5m
+            : Infinity;
+
+      if (!Number.isFinite(limit)) continue;
+
+      let hours = 0;
+      for (const ts of steps) {
+        if (
+          isReceptorInShadow(
+            r.x, r.y,
+            shadowReg.measurementHeight,
+            ts.altitude, ts.azimuthCompass,
+            northRotation, hf,
+          )
+        ) {
+          hours += timeStepHours;
+          if (hours > limit + 1e-9) {
+            return false;
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+
+  function floorToCentimeter(value: number): number {
+    return Math.max(0, Math.floor(value * 100) / 100);
+  }
+
   // Binary search
   let lo = 0;
   let hi = cap;
-  let bestCompliance = evalAtHeight(lo);
 
   if (cap <= shadowReg.measurementHeight) {
     const compliance = evalAtHeight(cap);
@@ -496,31 +651,35 @@ function findMaxHeightForPatternWithCache(
   }
 
   // Quick check: if even the cap height passes, use it
-  const capCheck = evalAtHeight(hi);
-  if (capCheck.passes) {
+  if (evalPassAtHeight(hi)) {
+    const compliance = evalAtHeight(hi);
     const floors = computeMaxFloors(hi, floorHeights);
     return {
       maxHeight: Math.round(hi * 100) / 100,
       maxFloors: floors,
       footprintArea: roundedArea,
       totalFloorArea: Math.round(area * floors * 100) / 100,
-      compliance: capCheck,
+      compliance,
     };
   }
 
   // Binary search: find max height that passes
-  for (let iter = 0; iter < 30; iter++) {
+  for (let iter = 0; iter < 30 && hi - lo > 0.01; iter++) {
     const mid = (lo + hi) / 2;
-    const result = evalAtHeight(mid);
-    if (result.passes) {
+    if (evalPassAtHeight(mid)) {
       lo = mid;
-      bestCompliance = result;
     } else {
       hi = mid;
     }
   }
 
-  const maxHeight = Math.round(lo * 100) / 100;
+  let maxHeight = floorToCentimeter(lo);
+  let compliance = evalAtHeight(maxHeight);
+  while (maxHeight > 0 && !compliance.passes) {
+    maxHeight = floorToCentimeter(maxHeight - 0.01);
+    compliance = evalAtHeight(maxHeight);
+  }
+
   const maxFloors = computeMaxFloors(maxHeight, floorHeights);
 
   return {
@@ -528,7 +687,7 @@ function findMaxHeightForPatternWithCache(
     maxFloors,
     footprintArea: roundedArea,
     totalFloorArea: Math.round(area * maxFloors * 100) / 100,
-    compliance: bestCompliance,
+    compliance,
   };
 }
 
@@ -605,13 +764,14 @@ function findOptimalInsetPattern(
 export function generateBuildingPatterns(
   input: VolumeInput,
   buildablePolygon: Point2D[],
+  measurementBoundary: Point2D[],
   northRotation: number,
   envelopeHF: HeightFieldData | null,
 ): BuildingPatternResult {
-  const { site, zoning, latitude } = input;
+  const { zoning, latitude } = input;
   const shadowReg = zoning.shadowRegulation;
   const absLimit = getAbsoluteHeightLimit(zoning.absoluteHeightLimit);
-  const shadowCache = shadowReg ? buildShadowEvalCache(site.vertices, latitude) : null;
+  const shadowCache = shadowReg ? buildShadowEvalCache(measurementBoundary, latitude) : null;
 
   // --- Low-rise pattern: use full buildable polygon ---
   const lowRiseFootprint = buildablePolygon;

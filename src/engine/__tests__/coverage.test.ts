@@ -136,4 +136,14 @@ describe('calculateMaxCoverage', () => {
     // 150 * 0.3 = 45
     expect(calculateMaxCoverage(site, zoning)).toBe(45);
   });
+
+  it('caps coverage by a stricter district plan ratio', () => {
+    const zoning = makeZoning({
+      coverageRatio: 0.8,
+      isCornerLot: true,
+      districtPlan: { name: '地区計画', coverageRatio: 0.6 },
+    });
+
+    expect(calculateMaxCoverage(site, zoning)).toBe(90);
+  });
 });

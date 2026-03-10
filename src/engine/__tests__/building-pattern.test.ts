@@ -363,103 +363,13 @@ describe('findMaxHeightForPattern with rectangular site', () => {
 
   const latitude = 35.68;
   const northRotation = 0;
+  let fullResultCap100: ReturnType<typeof findMaxHeightForPattern>;
+  let fullResultCap15: ReturnType<typeof findMaxHeightForPattern>;
+  let fullResultCap2: ReturnType<typeof findMaxHeightForPattern>;
+  let insetResultCap100: ReturnType<typeof findMaxHeightForPattern>;
 
-  it('finds a maxHeight that passes shadow compliance', () => {
-    // Use the full site as the footprint with a 100m height cap
-    const footprint = rectSite;
-    const result = findMaxHeightForPattern(
-      footprint,
-      rectSite,
-      shadowReg,
-      latitude,
-      northRotation,
-      100,
-    );
-
-    expect(result.maxHeight).toBeGreaterThan(0);
-    expect(result.compliance.passes).toBe(true);
-    expect(result.compliance.worstHoursAt5m).toBeLessThanOrEqual(shadowReg.maxHoursAt5m);
-    expect(result.compliance.worstHoursAt10m).toBeLessThanOrEqual(shadowReg.maxHoursAt10m);
-  });
-
-  it('maxFloors is consistent with maxHeight', () => {
-    const footprint = rectSite;
-    const result = findMaxHeightForPattern(
-      footprint,
-      rectSite,
-      shadowReg,
-      latitude,
-      northRotation,
-      100,
-    );
-
-    expect(result.maxFloors).toBe(Math.floor(result.maxHeight / 3.0));
-  });
-
-  it('footprintArea matches polygonArea of the footprint', () => {
-    const footprint = rectSite;
-    const result = findMaxHeightForPattern(
-      footprint,
-      rectSite,
-      shadowReg,
-      latitude,
-      northRotation,
-      100,
-    );
-
-    const expected = polygonArea(footprint); // 400 m^2
-    expect(result.footprintArea).toBeCloseTo(expected, 1);
-  });
-
-  it('totalFloorArea = footprintArea * maxFloors', () => {
-    const footprint = rectSite;
-    const result = findMaxHeightForPattern(
-      footprint,
-      rectSite,
-      shadowReg,
-      latitude,
-      northRotation,
-      100,
-    );
-
-    const expected = result.footprintArea * result.maxFloors;
-    expect(result.totalFloorArea).toBeCloseTo(expected, 1);
-  });
-
-  it('respects height cap', () => {
-    const footprint = rectSite;
-    const heightCap = 15;
-    const result = findMaxHeightForPattern(
-      footprint,
-      rectSite,
-      shadowReg,
-      latitude,
-      northRotation,
-      heightCap,
-    );
-
-    expect(result.maxHeight).toBeLessThanOrEqual(heightCap);
-  });
-
-  it('handles height cap below measurement height', () => {
-    const footprint = rectSite;
-    const heightCap = 2; // below measurementHeight (4m)
-    const result = findMaxHeightForPattern(
-      footprint,
-      rectSite,
-      shadowReg,
-      latitude,
-      northRotation,
-      heightCap,
-    );
-
-    expect(result.maxHeight).toBeLessThanOrEqual(heightCap);
-    expect(result.compliance.passes).toBe(true);
-  });
-
-  it('smaller footprint allows taller building (less shadow)', () => {
-    // Full site
-    const resultFull = findMaxHeightForPattern(
+  beforeAll(() => {
+    fullResultCap100 = findMaxHeightForPattern(
       rectSite,
       rectSite,
       shadowReg,
@@ -467,10 +377,25 @@ describe('findMaxHeightForPattern with rectangular site', () => {
       northRotation,
       100,
     );
+    fullResultCap15 = findMaxHeightForPattern(
+      rectSite,
+      rectSite,
+      shadowReg,
+      latitude,
+      northRotation,
+      15,
+    );
+    fullResultCap2 = findMaxHeightForPattern(
+      rectSite,
+      rectSite,
+      shadowReg,
+      latitude,
+      northRotation,
+      2,
+    );
 
-    // Inset footprint (smaller)
     const insetFootprint = applyWallSetback(rectSite, 5);
-    const resultInset = findMaxHeightForPattern(
+    insetResultCap100 = findMaxHeightForPattern(
       insetFootprint,
       rectSite,
       shadowReg,
@@ -478,8 +403,40 @@ describe('findMaxHeightForPattern with rectangular site', () => {
       northRotation,
       100,
     );
+  });
 
+  it('finds a maxHeight that passes shadow compliance', () => {
+    expect(fullResultCap100.maxHeight).toBeGreaterThan(0);
+    expect(fullResultCap100.compliance.passes).toBe(true);
+    expect(fullResultCap100.compliance.worstHoursAt5m).toBeLessThanOrEqual(shadowReg.maxHoursAt5m);
+    expect(fullResultCap100.compliance.worstHoursAt10m).toBeLessThanOrEqual(shadowReg.maxHoursAt10m);
+  });
+
+  it('maxFloors is consistent with maxHeight', () => {
+    expect(fullResultCap100.maxFloors).toBe(Math.floor(fullResultCap100.maxHeight / 3.0));
+  });
+
+  it('footprintArea matches polygonArea of the footprint', () => {
+    const expected = polygonArea(rectSite); // 400 m^2
+    expect(fullResultCap100.footprintArea).toBeCloseTo(expected, 1);
+  });
+
+  it('totalFloorArea = footprintArea * maxFloors', () => {
+    const expected = fullResultCap100.footprintArea * fullResultCap100.maxFloors;
+    expect(fullResultCap100.totalFloorArea).toBeCloseTo(expected, 1);
+  });
+
+  it('respects height cap', () => {
+    expect(fullResultCap15.maxHeight).toBeLessThanOrEqual(15);
+  });
+
+  it('handles height cap below measurement height', () => {
+    expect(fullResultCap2.maxHeight).toBeLessThanOrEqual(2);
+    expect(fullResultCap2.compliance.passes).toBe(true);
+  });
+
+  it('smaller footprint allows taller building (less shadow)', () => {
     // Smaller footprint should allow equal or taller maxHeight
-    expect(resultInset.maxHeight).toBeGreaterThanOrEqual(resultFull.maxHeight);
+    expect(insetResultCap100.maxHeight).toBeGreaterThanOrEqual(fullResultCap100.maxHeight);
   });
 });

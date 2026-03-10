@@ -9,7 +9,14 @@ import {
 } from '@/engine/feasibility';
 import { Input } from '@/components/ui/shadcn/input';
 
-const USE_TYPES: UseType[] = ['マンション', 'オフィス', '商業', 'ホテル', '混合'];
+const USE_TYPES = Object.keys(USE_TYPE_DEFAULTS) as UseType[];
+const USE_TYPE_LABELS: Record<UseType, string> = {
+  マンション: 'マンション',
+  オフィス: 'オフィス',
+  商業: '商業',
+  ホテル: 'ホテル',
+  混合: '混合',
+};
 
 export interface FeasibilitySnapshot {
   useType: UseType;
@@ -26,7 +33,7 @@ interface FeasibilitySectionProps {
 }
 
 export function FeasibilitySection({ totalFloorArea, onSnapshotChange }: FeasibilitySectionProps) {
-  const [useType, setUseType] = useState<UseType>('マンション');
+  const [useType, setUseType] = useState<UseType>(USE_TYPES[0]);
   const [landCostOkuStr, setLandCostOkuStr] = useState('');
   const [customCostStr, setCustomCostStr] = useState('');
   const [customRentalStr, setCustomRentalStr] = useState('');
@@ -36,6 +43,8 @@ export function FeasibilitySection({ totalFloorArea, onSnapshotChange }: Feasibi
   const defaults = USE_TYPE_DEFAULTS[useType];
 
   const values = useMemo(() => {
+    if (totalFloorArea <= 0) return null;
+
     const landCost = (Number.parseFloat(landCostOkuStr) || 0) * 10000;
     const constructionCostPerTsubo =
       Number.parseFloat(customCostStr) || defaults.constructionCostPerTsubo;
@@ -43,10 +52,6 @@ export function FeasibilitySection({ totalFloorArea, onSnapshotChange }: Feasibi
       Number.parseFloat(customRentalStr) || defaults.rentalIncomePerTsubo || undefined;
     const salePricePerTsubo =
       Number.parseFloat(customSaleStr) || defaults.salePricePerTsubo || undefined;
-
-    if (totalFloorArea <= 0) {
-      return null;
-    }
 
     const result = calculateFeasibility({
       totalFloorArea,
@@ -57,16 +62,14 @@ export function FeasibilitySection({ totalFloorArea, onSnapshotChange }: Feasibi
       salePricePerTsubo,
     });
 
-    const snapshot: FeasibilitySnapshot = {
+    return {
       useType,
       landCost,
       constructionCostPerTsubo,
       rentalIncomePerTsubo,
       salePricePerTsubo,
       result,
-    };
-
-    return snapshot;
+    } satisfies FeasibilitySnapshot;
   }, [
     customCostStr,
     customRentalStr,
@@ -91,9 +94,9 @@ export function FeasibilitySection({ totalFloorArea, onSnapshotChange }: Feasibi
 
   return (
     <div>
-      <h3 className="text-xs font-semibold text-muted-foreground mb-2">事業性概算</h3>
+      <h3 className="mb-2 text-xs font-semibold text-muted-foreground">事業性試算</h3>
 
-      <div className="rounded-lg bg-card border border-border px-3 py-3 space-y-3">
+      <div className="space-y-3 rounded-lg border border-border bg-card px-3 py-3">
         <div className="flex flex-wrap gap-1.5">
           {USE_TYPES.map((type) => (
             <button
@@ -102,26 +105,26 @@ export function FeasibilitySection({ totalFloorArea, onSnapshotChange }: Feasibi
               onClick={() => setUseType(type)}
               className={
                 useType === type
-                  ? 'text-[11px] px-2.5 py-1 rounded border border-primary bg-primary/10 text-primary'
-                  : 'text-[11px] px-2.5 py-1 rounded border border-border bg-muted/20 text-muted-foreground hover:bg-muted/40'
+                  ? 'rounded border border-primary bg-primary/10 px-2.5 py-1 text-[11px] text-primary'
+                  : 'rounded border border-border bg-muted/20 px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted/40'
               }
             >
-              {USE_TYPE_DEFAULTS[type].label}
+              {USE_TYPE_LABELS[type]}
             </button>
           ))}
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">土地取得費</span>
+          <span className="text-xs text-muted-foreground">土地代</span>
           <div className="flex items-center gap-1.5">
             <Input
               value={landCostOkuStr}
-              onChange={(e) => setLandCostOkuStr(e.target.value)}
+              onChange={(event) => setLandCostOkuStr(event.target.value)}
               type="number"
               step="0.1"
               min="0"
               placeholder="5"
-              className="h-7 w-24 text-xs text-right"
+              className="h-7 w-24 text-right text-xs"
             />
             <span className="text-xs text-muted-foreground">億円</span>
           </div>
@@ -130,103 +133,103 @@ export function FeasibilitySection({ totalFloorArea, onSnapshotChange }: Feasibi
         <button
           type="button"
           onClick={() => setShowCustom((prev) => !prev)}
-          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
         >
-          {showCustom ? '▾ 単価をカスタマイズ' : '▸ 単価をカスタマイズ'}
+          {showCustom ? 'カスタム設定を閉じる' : 'カスタム設定を開く'}
         </button>
 
-        {showCustom && (
-          <div className="space-y-2 pl-2 border-l border-border/60">
+        {showCustom ? (
+          <div className="space-y-2 border-l border-border/60 pl-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] text-muted-foreground">建設単価</span>
               <div className="flex items-center gap-1.5">
                 <Input
                   value={customCostStr}
-                  onChange={(e) => setCustomCostStr(e.target.value)}
+                  onChange={(event) => setCustomCostStr(event.target.value)}
                   type="number"
                   min="0"
                   placeholder={String(defaults.constructionCostPerTsubo)}
-                  className="h-6 w-20 text-[11px] text-right"
+                  className="h-6 w-20 text-right text-[11px]"
                 />
-                <span className="text-[10px] text-muted-foreground">万円/坪</span>
+                <span className="text-[10px] text-muted-foreground">万円 / 坪</span>
               </div>
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-muted-foreground">想定賃料</span>
+              <span className="text-[11px] text-muted-foreground">賃料単価</span>
               <div className="flex items-center gap-1.5">
                 <Input
                   value={customRentalStr}
-                  onChange={(e) => setCustomRentalStr(e.target.value)}
+                  onChange={(event) => setCustomRentalStr(event.target.value)}
                   type="number"
                   min="0"
                   placeholder={String(defaults.rentalIncomePerTsubo)}
-                  className="h-6 w-20 text-[11px] text-right"
+                  className="h-6 w-20 text-right text-[11px]"
                 />
-                <span className="text-[10px] text-muted-foreground">円/坪月</span>
+                <span className="text-[10px] text-muted-foreground">円 / 坪月</span>
               </div>
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-muted-foreground">販売単価</span>
+              <span className="text-[11px] text-muted-foreground">売価単価</span>
               <div className="flex items-center gap-1.5">
                 <Input
                   value={customSaleStr}
-                  onChange={(e) => setCustomSaleStr(e.target.value)}
+                  onChange={(event) => setCustomSaleStr(event.target.value)}
                   type="number"
                   min="0"
                   placeholder={String(defaults.salePricePerTsubo)}
-                  className="h-6 w-20 text-[11px] text-right"
+                  className="h-6 w-20 text-right text-[11px]"
                 />
-                <span className="text-[10px] text-muted-foreground">万円/坪</span>
+                <span className="text-[10px] text-muted-foreground">万円 / 坪</span>
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
-        <div className="pt-2 border-t border-border/60">
+        <div className="border-t border-border/60 pt-2">
           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            <span className="text-[11px] text-muted-foreground">延床（坪）</span>
-            <span className="text-[11px] text-right">{fmtMan(values.result.totalFloorAreaTsubo)} 坪</span>
-            <span className="text-[11px] text-muted-foreground">概算建設費</span>
-            <span className="text-[11px] text-right">{fmtMan(values.result.constructionCost)} 万円</span>
+            <span className="text-[11px] text-muted-foreground">延床面積（坪）</span>
+            <span className="text-right text-[11px]">{fmtMan(values.result.totalFloorAreaTsubo)} 坪</span>
+            <span className="text-[11px] text-muted-foreground">建設費</span>
+            <span className="text-right text-[11px]">{fmtMan(values.result.constructionCost)} 万円</span>
             <span className="text-[11px] text-muted-foreground">総事業費</span>
-            <span className="text-[11px] text-right font-medium">
+            <span className="text-right text-[11px] font-medium">
               {fmtMan(values.result.totalProjectCost)} 万円
             </span>
           </div>
 
-          {values.result.annualRentalIncome !== null && (
-            <div className="mt-2 pt-2 border-t border-border/40 grid grid-cols-2 gap-x-4 gap-y-1">
+          {values.result.annualRentalIncome !== null ? (
+            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border/40 pt-2">
               <span className="text-[11px] text-muted-foreground">年間賃料収入</span>
-              <span className="text-[11px] text-right">
+              <span className="text-right text-[11px]">
                 {fmtMan(values.result.annualRentalIncome)} 万円
               </span>
               <span className="text-[11px] text-muted-foreground">表面利回り</span>
-              <span className="text-[11px] text-right font-medium text-emerald-500">
+              <span className="text-right text-[11px] font-medium text-emerald-700">
                 {fmtPct(values.result.grossYield)}
               </span>
             </div>
-          )}
+          ) : null}
 
-          {values.result.totalSaleRevenue !== null && (
-            <div className="mt-2 pt-2 border-t border-border/40 grid grid-cols-2 gap-x-4 gap-y-1">
-              <span className="text-[11px] text-muted-foreground">販売総額</span>
-              <span className="text-[11px] text-right">{fmtMan(values.result.totalSaleRevenue)} 万円</span>
-              <span className="text-[11px] text-muted-foreground">事業収支</span>
+          {values.result.totalSaleRevenue !== null ? (
+            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border/40 pt-2">
+              <span className="text-[11px] text-muted-foreground">売上想定</span>
+              <span className="text-right text-[11px]">{fmtMan(values.result.totalSaleRevenue)} 万円</span>
+              <span className="text-[11px] text-muted-foreground">利益</span>
               <span
                 className={
                   values.result.profitLoss !== null && values.result.profitLoss >= 0
-                    ? 'text-[11px] text-right font-medium text-emerald-500'
-                    : 'text-[11px] text-right font-medium text-red-500'
+                    ? 'text-right text-[11px] font-medium text-emerald-700'
+                    : 'text-right text-[11px] font-medium text-rose-700'
                 }
               >
                 {fmtMan(values.result.profitLoss)} 万円
               </span>
               <span className="text-[11px] text-muted-foreground">利益率</span>
-              <span className="text-[11px] text-right">{fmtPct(values.result.profitMargin)}</span>
+              <span className="text-right text-[11px]">{fmtPct(values.result.profitMargin)}</span>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

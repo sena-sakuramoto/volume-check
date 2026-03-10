@@ -26,9 +26,12 @@ export function SetbackLayer({ vertices, indices, color }: SetbackLayerProps) {
         color={color}
         roughness={0.8}
         transparent
-        opacity={0.35}
-        side={THREE.DoubleSide}
-        depthWrite={false}
+        opacity={0.2}
+        side={THREE.FrontSide}
+        depthWrite
+        polygonOffset
+        polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1}
       />
     </mesh>
   );

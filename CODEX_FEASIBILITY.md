@@ -1,5 +1,7 @@
 # CODEX_FEASIBILITY: 事業性計算 + PDF帳票強化
 
+> **Session Handoff:** 作業前に必ず `docs/handover/VOLUMECHECK_MASTER_HANDOVER.md` を読み、起動URL・既知不具合・復旧手順を引き継ぐこと。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** ボリューム計算結果から用途別の概算建設費・収益・利回りを算出し、デベ向け事業検討レポートPDFを出力する

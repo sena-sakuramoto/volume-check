@@ -6,9 +6,9 @@ import { cn } from '@/lib/cn';
 type SnapPoint = 'collapsed' | 'half' | 'full';
 
 const SNAP_VH: Record<SnapPoint, number> = {
-  collapsed: 10,
-  half: 50,
-  full: 90,
+  collapsed: 12,
+  half: 56,
+  full: 92,
 };
 
 interface BottomSheetProps {
@@ -44,7 +44,6 @@ export function BottomSheet({ children, className }: BottomSheetProps) {
     const deltaVh = (dragOffset / windowH) * 100;
     const targetVh = baseVh + deltaVh;
 
-    // Snap to closest
     let bestSnap: SnapPoint = 'half';
     let bestDist = Infinity;
     for (const [key, val] of Object.entries(SNAP_VH)) {
@@ -54,6 +53,7 @@ export function BottomSheet({ children, className }: BottomSheetProps) {
         bestSnap = key as SnapPoint;
       }
     }
+
     setSnap(bestSnap);
     setDragOffset(0);
   }, [dragBaseVh, dragOffset]);
@@ -65,15 +65,14 @@ export function BottomSheet({ children, className }: BottomSheetProps) {
   return (
     <div
       className={cn(
-        'absolute bottom-0 left-0 right-0 z-20 bg-card/98 backdrop-blur-md border-t border-border rounded-t-2xl transition-[height] duration-300 ease-out flex flex-col',
+        'absolute bottom-0 left-0 right-0 z-20 flex flex-col rounded-t-[28px] border-t border-white/70 bg-[linear-gradient(180deg,rgba(255,252,246,0.98),rgba(247,241,230,0.96))] shadow-[0_-18px_42px_rgba(24,37,43,0.16)] backdrop-blur-xl transition-[height] duration-300 ease-out',
         isDragging && 'transition-none',
         className,
       )}
       style={heightStyle}
     >
-      {/* Drag handle */}
       <div
-        className="flex justify-center pt-2.5 pb-1.5 cursor-grab active:cursor-grabbing shrink-0"
+        className="shrink-0 cursor-grab active:cursor-grabbing"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -93,11 +92,12 @@ export function BottomSheet({ children, className }: BottomSheetProps) {
           document.addEventListener('mouseup', handleUp);
         }}
       >
-        <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+        <div className="flex justify-center pb-2 pt-3">
+          <div className="h-1.5 w-12 rounded-full bg-primary/25" />
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pb-4">
         {children}
       </div>
     </div>

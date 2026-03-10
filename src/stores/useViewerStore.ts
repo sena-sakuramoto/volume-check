@@ -21,11 +21,12 @@ export interface LayerState {
 
 const PRESETS: Record<Exclude<LayerPreset, 'custom'>, LayerState> = {
   basic: {
+    // Default practical view: show major legal slope constraints from first render.
     road: true, adjacent: true, north: true, absoluteHeight: true,
     shadow: false, reverseShadowContours: false, reverseShadowHeightmap: false,
     shadowMeasurementLines: false, shadowHeatmap: false, shadowTimeShadow: false,
-    floorPlates: true, buildingPatternLowRise: false, buildingPatternMidHigh: false,
-    buildingPatternOptimal: true,
+    floorPlates: false, buildingPatternLowRise: false, buildingPatternMidHigh: false,
+    buildingPatternOptimal: false,
   },
   shadow: {
     road: false, adjacent: false, north: false, absoluteHeight: false,
