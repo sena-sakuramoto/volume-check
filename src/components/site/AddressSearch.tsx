@@ -82,6 +82,18 @@ interface SiteShapeLookupResponse {
   siteCoordinates?: [number, number][];
 }
 
+interface PlateauLanduseLookupResponse {
+  site?: { vertices: { x: number; y: number }[]; area: number };
+  roads?: Array<{
+    edgeStart: { x: number; y: number };
+    edgeEnd: { x: number; y: number };
+    width: number;
+    centerOffset: number;
+    bearing: number;
+  }>;
+  siteCoordinates?: [number, number][];
+}
+
 function parseSiteCoordinates(value: unknown): [number, number][] | null {
   if (!Array.isArray(value) || value.length < 3) return null;
   const points: [number, number][] = [];
@@ -381,7 +393,7 @@ export function AddressSearch({
 
       setSearchStatus({ state: 'zoning-loading', address: confirmedAddress, lat, lng });
 
-      const [shapeRes, plateauRes, parcelRes] = await Promise.allSettled([
+      const [shapeRes, plateauRes, parcelRes, plateauLanduseRes] = await Promise.allSettled([
         fetch('/api/site-shape-lookup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -393,6 +405,11 @@ export function AddressSearch({
           body: JSON.stringify({ lat, lng }),
         }),
         fetch('/api/parcel-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng }),
+        }),
+        fetch('/api/plateau-landuse-lookup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lat, lng }),
@@ -462,6 +479,39 @@ export function AddressSearch({
           }
         } else if (Array.isArray(shapeData.roads) && shapeData.roads.length > 0) {
           onRoadsChange(shapeData.roads, { source: 'api' });
+        }
+      }
+
+      if (!siteDetected && plateauLanduseRes.status === 'fulfilled' && plateauLanduseRes.value.ok) {
+        const landuseData: PlateauLanduseLookupResponse = await plateauLanduseRes.value.json();
+        if (landuseData.site && Array.isArray(landuseData.site.vertices) && landuseData.site.vertices.length >= 3) {
+          onSiteChange(landuseData.site);
+          onSitePrecisionChange('approximate');
+          siteDetected = true;
+          const landuseSiteCoordinates = parseSiteCoordinates(landuseData.siteCoordinates);
+          if (landuseSiteCoordinates) {
+            selectedSiteCoordinates = landuseSiteCoordinates;
+            const inferredRoadResult = await fetchRoadsFromLookup(
+              lat,
+              lng,
+              landuseSiteCoordinates,
+              landuseData.site.vertices,
+            );
+            if (inferredRoadResult && inferredRoadResult.roads.length > 0) {
+              onRoadsChange(inferredRoadResult.roads, {
+                source: 'api',
+                candidates: inferredRoadResult.candidates,
+                message: inferredRoadResult.message,
+              });
+            } else if (Array.isArray(landuseData.roads) && landuseData.roads.length > 0) {
+              onRoadsChange(landuseData.roads, { source: 'api' });
+            }
+          } else if (Array.isArray(landuseData.roads) && landuseData.roads.length > 0) {
+            onRoadsChange(landuseData.roads, { source: 'api' });
+          }
+          setParcelStatusMessage(
+            '筆界データが見つからなかったため、PLATEAUの土地利用形状から概算敷地を配置しました。辺と道路を確認して調整してください。',
+          );
         }
       }
 
