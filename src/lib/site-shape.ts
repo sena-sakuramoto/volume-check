@@ -5,6 +5,14 @@ export interface GeoPoint {
   lng: number;
 }
 
+export interface ApproximateRectOptions {
+  width?: number;
+  depth?: number;
+}
+
+export const DEFAULT_APPROXIMATE_SITE_WIDTH = 12;
+export const DEFAULT_APPROXIMATE_SITE_DEPTH = 20;
+
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
@@ -177,3 +185,36 @@ export function inferDefaultRoadFromVertices(vertices: Point2D[], width: number 
   };
 }
 
+export function buildApproximateRectGeoRing(
+  lat: number,
+  lng: number,
+  options: ApproximateRectOptions = {},
+): GeoPoint[] | null {
+  if (!isFiniteNumber(lat) || !isFiniteNumber(lng)) return null;
+
+  const width = options.width ?? DEFAULT_APPROXIMATE_SITE_WIDTH;
+  const depth = options.depth ?? DEFAULT_APPROXIMATE_SITE_DEPTH;
+  if (!Number.isFinite(width) || !Number.isFinite(depth) || width <= 0 || depth <= 0) {
+    return null;
+  }
+
+  const phi = (lat * Math.PI) / 180;
+  const metersPerDegLat =
+    111132.92 - 559.82 * Math.cos(2 * phi) + 1.175 * Math.cos(4 * phi) - 0.0023 * Math.cos(6 * phi);
+  const metersPerDegLng =
+    111412.84 * Math.cos(phi) - 93.5 * Math.cos(3 * phi) + 0.118 * Math.cos(5 * phi);
+
+  if (!Number.isFinite(metersPerDegLat) || !Number.isFinite(metersPerDegLng) || metersPerDegLng === 0) {
+    return null;
+  }
+
+  const halfDepthDeg = (depth / 2) / metersPerDegLat;
+  const halfWidthDeg = (width / 2) / metersPerDegLng;
+
+  return [
+    { lat: lat - halfDepthDeg, lng: lng - halfWidthDeg },
+    { lat: lat - halfDepthDeg, lng: lng + halfWidthDeg },
+    { lat: lat + halfDepthDeg, lng: lng + halfWidthDeg },
+    { lat: lat + halfDepthDeg, lng: lng - halfWidthDeg },
+  ];
+}

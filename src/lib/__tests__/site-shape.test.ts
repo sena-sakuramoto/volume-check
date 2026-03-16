@@ -1,4 +1,5 @@
 import {
+  buildApproximateRectGeoRing,
   extractGeoRingFromPayload,
   buildSiteFromGeoRing,
   inferDefaultRoadFromVertices,
@@ -59,5 +60,19 @@ describe('site-shape utilities', () => {
     expect(road!.width).toBe(6);
     expect(road!.centerOffset).toBe(3);
   });
-});
 
+  it('builds an approximate rectangular ring around a point', () => {
+    const ring = buildApproximateRectGeoRing(35.633624, 139.713613, {
+      width: 12,
+      depth: 20,
+    });
+
+    expect(ring).not.toBeNull();
+    expect(ring).toHaveLength(4);
+
+    const site = buildSiteFromGeoRing(ring!);
+    expect(site).not.toBeNull();
+    expect(site!.area).toBeGreaterThan(200);
+    expect(site!.area).toBeLessThan(280);
+  });
+});

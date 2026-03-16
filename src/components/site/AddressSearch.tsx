@@ -2,7 +2,13 @@
 
 import { useState, useRef, useCallback } from 'react';
 import type { ZoningDistrict, FireDistrict, HeightDistrict } from '@/engine/types';
-import { buildSiteFromGeoRing, inferDefaultRoadFromVertices } from '@/lib/site-shape';
+import {
+  buildApproximateRectGeoRing,
+  buildSiteFromGeoRing,
+  inferDefaultRoadFromVertices,
+  DEFAULT_APPROXIMATE_SITE_DEPTH,
+  DEFAULT_APPROXIMATE_SITE_WIDTH,
+} from '@/lib/site-shape';
 import { Input } from '@/components/ui/shadcn/input';
 import { Button } from '@/components/ui/shadcn/button';
 import { Loader2, CheckCircle2, AlertTriangle, XCircle, MapPin } from 'lucide-react';
@@ -395,11 +401,13 @@ export function AddressSearch({
 
       let siteDetected = false;
       let selectedSiteCoordinates: [number, number][] | null = null;
+      let hasSelectableParcels = false;
 
       if (parcelRes.status === 'fulfilled' && parcelRes.value.ok) {
         const parcelPayload = await parcelRes.value.json();
         const candidates = parseParcelCandidates(parcelPayload);
         if (candidates.length > 0) {
+          hasSelectableParcels = true;
           setParcelCandidates(candidates);
           const defaultIndex = pickDefaultParcelIndex(candidates);
           setSelectedParcelIndex(defaultIndex);
@@ -454,6 +462,21 @@ export function AddressSearch({
           }
         } else if (Array.isArray(shapeData.roads) && shapeData.roads.length > 0) {
           onRoadsChange(shapeData.roads, { source: 'api' });
+        }
+      }
+
+      if (!siteDetected && !hasSelectableParcels) {
+        const approximateRing = buildApproximateRectGeoRing(lat, lng, {
+          width: DEFAULT_APPROXIMATE_SITE_WIDTH,
+          depth: DEFAULT_APPROXIMATE_SITE_DEPTH,
+        });
+        const applied = await applyGeoRingGeometry(approximateRing, lat, lng);
+        if (applied.siteDetected) {
+          siteDetected = true;
+          selectedSiteCoordinates = applied.siteCoordinates;
+          setParcelStatusMessage(
+            `筆界データが見つからなかったため、概算敷地（約${DEFAULT_APPROXIMATE_SITE_WIDTH * DEFAULT_APPROXIMATE_SITE_DEPTH}m²）を仮配置しました。辺と道路を確認して調整してください。`,
+          );
         }
       }
 
