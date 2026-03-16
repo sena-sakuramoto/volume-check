@@ -122,6 +122,7 @@ function parseParcelCandidates(payload: unknown): ParcelCandidate[] {
 
 export function AddressSearch({
   onSiteChange,
+  onSitePrecisionChange,
   onRoadsChange,
   onLatitudeChange,
   onZoningChange,
@@ -237,6 +238,7 @@ export function AddressSearch({
 
     const siteCoordinates = ring.map((point) => [point.lng, point.lat] as [number, number]);
     onSiteChange(site);
+    onSitePrecisionChange('approximate');
     const inferredRoadResult = await fetchRoadsFromLookup(lat, lng, siteCoordinates, site.vertices);
     if (inferredRoadResult && inferredRoadResult.roads.length > 0) {
       onRoadsChange(inferredRoadResult.roads, {
@@ -256,7 +258,7 @@ export function AddressSearch({
       siteDetected: true,
       siteCoordinates,
     };
-  }, [onSiteChange, onRoadsChange, fetchRoadsFromLookup]);
+  }, [onSiteChange, onSitePrecisionChange, onRoadsChange, fetchRoadsFromLookup]);
 
   const fetchZoning = useCallback(async (
     lat: number,
@@ -431,6 +433,7 @@ export function AddressSearch({
 
         if (shapeData.site && Array.isArray(shapeData.site.vertices) && shapeData.site.vertices.length >= 3) {
           onSiteChange(shapeData.site);
+          onSitePrecisionChange('approximate');
           siteDetected = true;
 
           const shapeSiteCoordinates = parseSiteCoordinates(shapeData.siteCoordinates);
@@ -530,6 +533,7 @@ export function AddressSearch({
     onLatitudeChange,
     onSiteChange,
     onRoadsChange,
+    onSitePrecisionChange,
     onHeightDetected,
     applyGeoRingGeometry,
     fetchRoadsFromLookup,

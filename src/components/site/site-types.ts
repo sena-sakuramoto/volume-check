@@ -65,6 +65,7 @@ export type RoadDirection = 'south' | 'north' | 'east' | 'west';
 export type RoadSource = 'manual' | 'api' | 'ai' | 'demo';
 export type RoadReviewStatus = 'confirmed' | 'suggested';
 export type RoadConfidence = 'high' | 'medium' | 'low';
+export type SitePrecision = 'approximate' | 'reference' | 'confirmed';
 export type OppositeOpenSpaceKind =
   | 'none'
   | 'alley'
@@ -170,6 +171,26 @@ export const DISTRICT_SHORT_LABELS = toRecord(DISTRICT_SHORT_ENTRIES);
 export const FIRE_DISTRICT_LABELS = toRecord(FIRE_DISTRICT_ENTRIES);
 export const HEIGHT_DISTRICT_LABELS = toRecord(HEIGHT_DISTRICT_ENTRIES);
 
+export const SITE_PRECISION_LABELS: Record<SitePrecision, string> = {
+  approximate: '概算',
+  reference: '参照',
+  confirmed: '確定',
+};
+
+export const SITE_PRECISION_HINTS: Record<SitePrecision, string> = {
+  approximate: '住所やPLATEAU/地図系データをもとにした概算形状です。',
+  reference: 'PDF・画像・手修正を含む参照形状です。最終確定前に確認が必要です。',
+  confirmed: '測量図や座標付きデータをもとにした確定形状です。',
+};
+
+export function getSitePrecisionLabel(precision: SitePrecision): string {
+  return SITE_PRECISION_LABELS[precision];
+}
+
+export function getSitePrecisionHint(precision: SitePrecision): string {
+  return SITE_PRECISION_HINTS[precision];
+}
+
 export const ROAD_WIDTH_PRESETS = [4, 6, 8] as const;
 
 export const ROAD_DIRECTION_OPTIONS: { key: RoadDirection; label: string; bearing: number }[] = [
@@ -262,6 +283,7 @@ export function getOppositeOpenSpaceLabel(kind: OppositeOpenSpaceKind | null | u
 /** Shared props for site sub-components that can trigger parent state changes */
 export interface SiteCallbacks {
   onSiteChange: (site: SiteBoundary) => void;
+  onSitePrecisionChange: (precision: SitePrecision) => void;
   onRoadsChange: (
     roads: Road[],
     options?: {

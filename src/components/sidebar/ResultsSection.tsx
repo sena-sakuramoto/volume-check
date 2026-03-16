@@ -27,7 +27,10 @@ import {
   getFireDistrictLabel,
   getHeightDistrictLabel,
   getOppositeOpenSpaceLabel,
+  getSitePrecisionHint,
+  getSitePrecisionLabel,
 } from '@/components/site/site-types';
+import type { SitePrecision } from '@/components/site/site-types';
 
 function SectionFrame({
   eyebrow,
@@ -95,6 +98,7 @@ interface ResultsSectionProps {
   zoning: ZoningData | null;
   result: VolumeResult | null;
   site: SiteBoundary | null;
+  sitePrecision: SitePrecision;
   roads: Road[];
   floorHeights: number[];
   onFloorHeightsChange: (heights: number[]) => void;
@@ -104,6 +108,7 @@ export function ResultsSection({
   zoning,
   result,
   site,
+  sitePrecision,
   roads,
   floorHeights,
   onFloorHeightsChange,
@@ -176,6 +181,13 @@ export function ResultsSection({
   return (
     <div className="space-y-4 p-4">
       {result ? <HeroMetrics result={result} /> : null}
+
+      {site ? (
+        <div className="rounded-2xl border border-primary/15 bg-primary/10 px-4 py-3 text-[11px] text-primary">
+          <span className="font-semibold">敷地 {getSitePrecisionLabel(sitePrecision)}</span>
+          <span className="ml-2 text-primary/80">{getSitePrecisionHint(sitePrecision)}</span>
+        </div>
+      ) : null}
 
       <SectionFrame
         eyebrow="Regulation"
@@ -339,6 +351,7 @@ export function ResultsSection({
         zoning={zoning}
         result={result}
         site={site}
+        sitePrecision={sitePrecision}
         roads={roads}
         floorHeights={floorHeights}
         feasibility={feasibilitySnapshot}

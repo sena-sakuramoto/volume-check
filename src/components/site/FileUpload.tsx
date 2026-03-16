@@ -44,6 +44,7 @@ interface FileUploadProps extends SiteCallbacks {
 
 export function FileUpload({
   onSiteChange,
+  onSitePrecisionChange,
   onRoadsChange,
   onZoningChange,
   onLatitudeChange,
@@ -82,6 +83,7 @@ export function FileUpload({
           const text = await file.text();
           const result = parseSiteFile(file.name, text);
           onSiteChange(result.site);
+          onSitePrecisionChange('confirmed');
           if (result.roads.length > 0) onRoadsChange(result.roads, { source: 'manual' });
           if (result.latitude) onLatitudeChange(result.latitude);
           setUploadStatus({ state: 'success', notes: result.notes });
@@ -210,6 +212,7 @@ export function FileUpload({
         if (hasPolygon) {
           const verts = siteData!.vertices!;
           onSiteChange(buildPolygonSite(verts, siteData!.area ?? undefined));
+          onSitePrecisionChange('reference');
 
           const allRoads = data.roads;
           const normalizeDirection = (value: string | undefined): RoadDirection => {
@@ -278,7 +281,7 @@ export function FileUpload({
         setUploadStatus({ state: 'error', message: 'サーバーに接続できませんでした。' });
       }
     },
-    [onSiteChange, onRoadsChange, onZoningChange, onLatitudeChange, roadWidth, selectedDistrict, onSiteWidthDetected, onSiteDepthDetected, onRoadWidthDetected, onRoadDirectionDetected, onDistrictDetected, onCoverageDetected, onFarDetected, onFireDetected],
+    [onSiteChange, onSitePrecisionChange, onRoadsChange, onZoningChange, onLatitudeChange, roadWidth, selectedDistrict, onSiteWidthDetected, onSiteDepthDetected, onRoadWidthDetected, onRoadDirectionDetected, onDistrictDetected, onCoverageDetected, onFarDetected, onFireDetected],
   );
 
   const handleDrop = useCallback(

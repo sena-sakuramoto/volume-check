@@ -23,6 +23,11 @@ import type {
   RoadDirection,
   RoadReviewStatus,
   RoadSource,
+  SitePrecision,
+} from '@/components/site/site-types';
+import {
+  getSitePrecisionHint,
+  getSitePrecisionLabel,
 } from '@/components/site/site-types';
 import { buildZoningData } from '@/components/site/site-helpers';
 import { PrintReport } from '@/components/ui/PrintReport';
@@ -129,6 +134,7 @@ const MOBILE_STEP_META: Record<Step, { eyebrow: string; title: string; descripti
 export default function ProjectPage() {
   const [disable3D, setDisable3D] = useState(false);
   const [site, setSite] = useState<SiteBoundary | null>(null);
+  const [sitePrecision, setSitePrecision] = useState<SitePrecision>('reference');
   const [roads, setRoads] = useState<Road[]>([]);
   const [zoning, setZoning] = useState<ZoningData | null>(null);
   const [latitude, setLatitude] = useState(35.68);
@@ -169,6 +175,7 @@ export default function ProjectPage() {
     if (!saved) return;
 
     setSite(saved.site);
+    setSitePrecision(saved.sitePrecision ?? 'reference');
     setRoads(saved.roads);
     setZoning(saved.zoning);
     setLatitude(saved.latitude);
@@ -216,7 +223,7 @@ export default function ProjectPage() {
     showTimeShadow: layers.shadowTimeShadow,
   });
 
-  useAutoSave({ site, roads, zoning, latitude, floorHeights, roadConfigs });
+  useAutoSave({ site, roads, zoning, latitude, floorHeights, roadConfigs, sitePrecision });
 
   const [hasNavigated, setHasNavigated] = useState(false);
   const resolvedActiveStep = useMemo<Step>(() => {
@@ -354,6 +361,7 @@ export default function ProjectPage() {
     setRoadConfigs(buildRoadConfigs(demoRoads, { source: 'demo', reviewStatus: 'confirmed' }));
 
     setSite(demoSite);
+    setSitePrecision('reference');
     setRoads(demoRoads);
     setZoning(demoZoning);
     setLatitude(DEMO_INPUT.latitude);
@@ -368,6 +376,8 @@ export default function ProjectPage() {
         <SiteSection
           site={site}
           onSiteChange={setSite}
+          sitePrecision={sitePrecision}
+          onSitePrecisionChange={setSitePrecision}
           onRoadsChange={setRoads}
           onZoningChange={setZoning}
           onLatitudeChange={setLatitude}
@@ -409,6 +419,7 @@ export default function ProjectPage() {
           zoning={zoning}
           result={volumeResult}
           site={site}
+          sitePrecision={sitePrecision}
           roads={roads}
           floorHeights={effectiveFloorHeights}
           onFloorHeightsChange={setFloorHeights}
@@ -457,6 +468,12 @@ export default function ProjectPage() {
             </p>
           </div>
         </div>
+        {site ? (
+          <div className="hidden rounded-full border border-primary/15 bg-primary/10 px-2.5 py-1 text-[10px] text-primary md:block">
+            <span className="font-semibold">敷地 {getSitePrecisionLabel(sitePrecision)}</span>
+            <span className="ml-1 text-primary/80">{getSitePrecisionHint(sitePrecision)}</span>
+          </div>
+        ) : null}
         <div className="flex items-center gap-2">
           <Button type="button" size="sm" variant="secondary" onClick={handleLoadDemoModel}>
             デモ
@@ -546,6 +563,13 @@ export default function ProjectPage() {
                 <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
                   {mobileStepMeta.description}
                 </p>
+                {site ? (
+                  <p className="mt-2 text-[10px] text-muted-foreground">
+                    敷地状態: <span className="font-semibold text-foreground">{getSitePrecisionLabel(sitePrecision)}</span>
+                    {' · '}
+                    {getSitePrecisionHint(sitePrecision)}
+                  </p>
+                ) : null}
               </div>
               <span className="rounded-full border border-primary/15 bg-primary/10 px-2.5 py-1 text-[10px] font-semibold text-primary">
                 {resolvedActiveStep} / 3

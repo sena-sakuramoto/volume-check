@@ -4,6 +4,8 @@ import { useCallback } from 'react';
 import { FilePdf } from '@phosphor-icons/react';
 import type { Road, SiteBoundary, VolumeResult, ZoningData } from '@/engine/types';
 import type { FeasibilitySnapshot } from '@/components/results/FeasibilitySection';
+import type { SitePrecision } from '@/components/site/site-types';
+import { getSitePrecisionLabel } from '@/components/site/site-types';
 import { Button } from '@/components/ui/shadcn/button';
 import { generatePdfReport } from '@/lib/pdf-export';
 
@@ -18,6 +20,7 @@ interface ActionToolbarProps {
   zoning: ZoningData | null;
   result: VolumeResult | null;
   site: SiteBoundary | null;
+  sitePrecision: SitePrecision;
   roads: Road[];
   floorHeights: number[];
   feasibility: FeasibilitySnapshot | null;
@@ -27,6 +30,7 @@ export function ActionToolbar({
   zoning,
   result,
   site,
+  sitePrecision,
   roads,
   floorHeights,
   feasibility,
@@ -56,6 +60,9 @@ export function ActionToolbar({
         </p>
         <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
           現在の条件と試算結果を PDF レポートとして出力します。
+        </p>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          敷地状態: {getSitePrecisionLabel(sitePrecision)}
         </p>
       </div>
       <Button onClick={handlePdf} disabled={!result} size="sm" className="shrink-0">

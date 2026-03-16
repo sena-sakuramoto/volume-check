@@ -13,7 +13,17 @@ import { AddressSearch } from '@/components/site/AddressSearch';
 import { FileUpload } from '@/components/site/FileUpload';
 import { SiteEditor } from '@/components/site/SiteEditor';
 import { RoadEditor } from '@/components/site/RoadEditor';
-import type { RoadCandidate, RoadConfig, RoadDirection, RoadSource } from '@/components/site/site-types';
+import {
+  getSitePrecisionHint,
+  getSitePrecisionLabel,
+} from '@/components/site/site-types';
+import type {
+  RoadCandidate,
+  RoadConfig,
+  RoadDirection,
+  RoadSource,
+  SitePrecision,
+} from '@/components/site/site-types';
 import {
   buildRectSite,
   buildRoad,
@@ -27,6 +37,8 @@ import { DEMO_INPUT, DEMO_ROADS, DEMO_SITE, DEMO_ZONING } from '@/lib/demo-data'
 interface SiteSectionProps {
   site: SiteBoundary | null;
   onSiteChange: (site: SiteBoundary) => void;
+  sitePrecision: SitePrecision;
+  onSitePrecisionChange: (precision: SitePrecision) => void;
   onRoadsChange: (roads: Road[]) => void;
   onZoningChange: (zoning: ZoningData) => void;
   onLatitudeChange: (lat: number) => void;
@@ -81,6 +93,8 @@ function isAxisAlignedRectSite(site: SiteBoundary | null): boolean {
 export function SiteSection({
   site,
   onSiteChange,
+  sitePrecision,
+  onSitePrecisionChange,
   onRoadsChange,
   onZoningChange,
   onLatitudeChange,
@@ -222,6 +236,7 @@ export function SiteSection({
     onCornerLotChange(demoZoning.isCornerLot);
 
     onSiteChange(demoSite);
+    onSitePrecisionChange('reference');
     onRoadsChange(demoRoads);
     onZoningChange(demoZoning);
     onLatitudeChange(DEMO_INPUT.latitude);
@@ -244,6 +259,7 @@ export function SiteSection({
     onRoadsChange,
     onSiteChange,
     onZoningChange,
+    onSitePrecisionChange,
     roadConfigs,
   ]);
 
@@ -481,7 +497,7 @@ export function SiteSection({
   return (
     <div className="space-y-4 p-4">
       {site ? (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <div className="ui-surface-soft px-3 py-3">
             <p className="text-[10px] tracking-[0.14em] text-muted-foreground">敷地</p>
             <p className="mt-2 font-display text-lg font-semibold text-foreground">
@@ -502,6 +518,13 @@ export function SiteSection({
               {roadConfigs.every((config) => (config.reviewStatus ?? 'confirmed') === 'confirmed')
                 ? '確認済み'
                 : '確認待ちあり'}
+            </p>
+          </div>
+          <div className="ui-surface-soft px-3 py-3">
+            <p className="text-[10px] tracking-[0.14em] text-muted-foreground">精度</p>
+            <p className="mt-2 text-sm font-semibold text-foreground">{getSitePrecisionLabel(sitePrecision)}</p>
+            <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
+              {getSitePrecisionHint(sitePrecision)}
             </p>
           </div>
         </div>
@@ -552,6 +575,7 @@ export function SiteSection({
         {entryMode === 'address' ? (
           <AddressSearch
             onSiteChange={onSiteChange}
+            onSitePrecisionChange={onSitePrecisionChange}
             onRoadsChange={applyDetectedRoads}
             onZoningChange={onZoningChange}
             onLatitudeChange={onLatitudeChange}
@@ -566,6 +590,7 @@ export function SiteSection({
         {entryMode === 'file' ? (
           <FileUpload
             onSiteChange={onSiteChange}
+            onSitePrecisionChange={onSitePrecisionChange}
             onRoadsChange={applyDetectedRoads}
             onZoningChange={onZoningChange}
             onLatitudeChange={onLatitudeChange}
@@ -589,7 +614,10 @@ export function SiteSection({
             </div>
             <SiteEditor
               site={site}
-              onSiteChange={onSiteChange}
+              onSiteChange={(nextSite) => {
+                onSiteChange(nextSite);
+                onSitePrecisionChange('reference');
+              }}
               siteWidth={siteWidth}
               siteDepth={siteDepth}
               onSiteWidthChange={handleSiteWidth}
@@ -617,7 +645,10 @@ export function SiteSection({
         >
           <SiteEditor
             site={site}
-            onSiteChange={onSiteChange}
+            onSiteChange={(nextSite) => {
+              onSiteChange(nextSite);
+              onSitePrecisionChange('reference');
+            }}
             siteWidth={siteWidth}
             siteDepth={siteDepth}
             onSiteWidthChange={handleSiteWidth}
