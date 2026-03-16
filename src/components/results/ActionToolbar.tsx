@@ -21,6 +21,7 @@ interface ActionToolbarProps {
   result: VolumeResult | null;
   site: SiteBoundary | null;
   sitePrecision: SitePrecision;
+  roadReady: boolean;
   roads: Road[];
   floorHeights: number[];
   feasibility: FeasibilitySnapshot | null;
@@ -31,12 +32,13 @@ export function ActionToolbar({
   result,
   site,
   sitePrecision,
+  roadReady,
   roads,
   floorHeights,
   feasibility,
 }: ActionToolbarProps) {
   const handlePdf = useCallback(() => {
-    if (!zoning || !result) return;
+    if (!zoning || !result || !roadReady) return;
     const directionLabel = (bearing: number) => DIRECTION_LABELS[bearing] ?? `${bearing}°`;
 
     generatePdfReport(
@@ -50,7 +52,7 @@ export function ActionToolbar({
       })),
       feasibility,
     );
-  }, [feasibility, floorHeights, result, roads, site, zoning]);
+  }, [feasibility, floorHeights, result, roadReady, roads, site, zoning]);
 
   return (
     <div className="ui-surface flex items-center justify-between gap-3 px-4 py-3">
@@ -59,13 +61,18 @@ export function ActionToolbar({
           Export
         </p>
         <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-          現在の条件と試算結果を PDF レポートとして出力します。
+          現在の計算結果と試算条件を PDF レポートとして出力します。
         </p>
         <p className="mt-1 text-[10px] text-muted-foreground">
           敷地状態: {getSitePrecisionLabel(sitePrecision)}
         </p>
+        {!roadReady ? (
+          <p className="mt-1 text-[10px] text-amber-700">
+            接道条件を確定すると PDF 出力できます。
+          </p>
+        ) : null}
       </div>
-      <Button onClick={handlePdf} disabled={!result} size="sm" className="shrink-0">
+      <Button onClick={handlePdf} disabled={!result || !roadReady} size="sm" className="shrink-0">
         <FilePdf className="mr-1 h-3.5 w-3.5" weight="regular" />
         PDF出力
       </Button>

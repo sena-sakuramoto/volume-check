@@ -30,7 +30,7 @@ import {
   getSitePrecisionHint,
   getSitePrecisionLabel,
 } from '@/components/site/site-types';
-import type { SitePrecision } from '@/components/site/site-types';
+import type { RoadConfig, SitePrecision } from '@/components/site/site-types';
 
 function SectionFrame({
   eyebrow,
@@ -100,6 +100,7 @@ interface ResultsSectionProps {
   site: SiteBoundary | null;
   sitePrecision: SitePrecision;
   roads: Road[];
+  roadConfigs: RoadConfig[];
   floorHeights: number[];
   onFloorHeightsChange: (heights: number[]) => void;
 }
@@ -110,11 +111,14 @@ export function ResultsSection({
   site,
   sitePrecision,
   roads,
+  roadConfigs,
   floorHeights,
   onFloorHeightsChange,
 }: ResultsSectionProps) {
   const [landPriceInput, setLandPriceInput] = useState('');
   const [feasibilitySnapshot, setFeasibilitySnapshot] = useState<FeasibilitySnapshot | null>(null);
+  const hasPendingRoadReview = roadConfigs.some((config) => (config.boundaryDecision ?? 'road') === 'review');
+  const activeRoadCount = roadConfigs.filter((config) => (config.boundaryDecision ?? 'road') === 'road').length;
 
   if (!zoning) {
     return (
@@ -122,10 +126,10 @@ export function ResultsSection({
         <SectionFrame
           eyebrow="Ready"
           title="結果はここに表示されます"
-          description="敷地入力と法規設定が終わると、最大ボリュームと事業性の概算をまとめて確認できます。"
+          description="敷地入力と法規設定がそろうと、概算ボリュームと事業性の目安をここで確認できます。"
         >
           <div className="rounded-xl border border-dashed border-border bg-white/55 px-4 py-6 text-center text-[12px] text-muted-foreground">
-            まずは敷地入力と法規設定を完了してください。
+            まずは敷地入力と法規設定を進めてください。
           </div>
         </SectionFrame>
       </div>
@@ -158,7 +162,7 @@ export function ResultsSection({
         parts.push(`種別 ${getOppositeOpenSpaceLabel(road.oppositeOpenSpaceKind)}`);
       }
       if ((road.slopeWidthOverride ?? 0) > 0) {
-        parts.push(`斜線基準幅 ${getRoadSlopeEffectiveWidth(road).toFixed(2)}m`);
+        parts.push(`みなし幅員 ${getRoadSlopeEffectiveWidth(road).toFixed(2)}m`);
       }
       if ((road.siteHeightAboveRoad ?? 0) !== 0) {
         parts.push(`高低差 ${(road.siteHeightAboveRoad ?? 0).toFixed(2)}m`);
@@ -184,15 +188,21 @@ export function ResultsSection({
 
       {site ? (
         <div className="rounded-2xl border border-primary/15 bg-primary/10 px-4 py-3 text-[11px] text-primary">
-          <span className="font-semibold">敷地 {getSitePrecisionLabel(sitePrecision)}</span>
+          <span className="font-semibold">敷地状態 {getSitePrecisionLabel(sitePrecision)}</span>
           <span className="ml-2 text-primary/80">{getSitePrecisionHint(sitePrecision)}</span>
+        </div>
+      ) : null}
+
+      {hasPendingRoadReview || activeRoadCount === 0 ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/95 px-4 py-3 text-[11px] text-amber-950">
+          接道条件が未確定です。現在のボリュームは参考値として扱ってください。
         </div>
       ) : null}
 
       <SectionFrame
         eyebrow="Regulation"
         title="法規サマリー"
-        description="現在の設定値を一度に確認できます。自動取得のあとでも手で上書きできます。"
+        description="現在の設定を一覧で確認できます。必要なら前のステップに戻って微調整してください。"
       >
         <div className="grid grid-cols-1 gap-2">
           <LabelValue label="用途地域" value={getDistrictLabel(zoning.district)} />
@@ -202,11 +212,11 @@ export function ResultsSection({
           <LabelValue label="高度地区" value={getHeightDistrictLabel(zoning.heightDistrict?.type)} />
           <LabelValue
             label="絶対高さ"
-            value={zoning.absoluteHeightLimit !== null ? `${zoning.absoluteHeightLimit}m` : '指定なし'}
+            value={zoning.absoluteHeightLimit !== null ? `${zoning.absoluteHeightLimit}m` : '未設定'}
           />
           <LabelValue
-            label="壁面後退"
-            value={zoning.wallSetback !== null ? `${zoning.wallSetback}m` : '指定なし'}
+            label="外壁後退"
+            value={zoning.wallSetback !== null ? `${zoning.wallSetback}m` : '未設定'}
           />
           {site ? <LabelValue label="敷地面積" value={`${site.area.toFixed(2)}m²`} /> : null}
           {zoning.isCornerLot ? <LabelValue label="角地" value="あり" /> : null}
@@ -216,7 +226,7 @@ export function ResultsSection({
       <SectionFrame
         eyebrow="Envelope"
         title="斜線と高さの前提"
-        description="包絡体の計算に使っている主要な条件です。"
+        description="ボリューム計算に使っている主要な制限です。"
       >
         <div className="grid grid-cols-1 gap-2">
           <LabelValue label="道路斜線" value={`1 : ${roadParams.slopeRatio}`} />
@@ -235,7 +245,7 @@ export function ResultsSection({
           ) : null}
           {roads.length > 0 ? (
             <LabelValue
-              label="道路幅員による容積率"
+              label="前面道路幅員による容積率"
               value={`${Math.round(roadBasedFar * 100)}%`}
             />
           ) : null}
@@ -259,7 +269,7 @@ export function ResultsSection({
                   type="number"
                   value={landPriceInput}
                   onChange={(event) => setLandPriceInput(event.target.value)}
-                  placeholder="例 30000"
+                  placeholder="例: 30000"
                   min="0"
                   step="100"
                   className="h-8 w-32 text-right text-xs"
@@ -273,8 +283,8 @@ export function ResultsSection({
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <ValueTile label="延床面積" value={result.maxFloorArea.toFixed(0)} unit="m²" />
-            <ValueTile label="建築面積" value={result.maxCoverageArea.toFixed(0)} unit="m²" />
+            <ValueTile label="最大延床面積" value={result.maxFloorArea.toFixed(0)} unit="m²" />
+            <ValueTile label="最大建築面積" value={result.maxCoverageArea.toFixed(0)} unit="m²" />
             <ValueTile
               label="最高高さ"
               value={Number.isFinite(result.maxHeight) ? result.maxHeight.toFixed(1) : '--'}
@@ -282,7 +292,7 @@ export function ResultsSection({
             />
             <ValueTile label="階数" value={`${result.maxFloors}`} unit="F" />
             <ValueTile
-              label="土地坪単価"
+              label="坪単価目安"
               value={unitLandPrice !== null ? unitLandPrice.toFixed(1) : '--'}
               unit={unitLandPrice !== null ? '万円 / 坪' : undefined}
             />
@@ -308,7 +318,7 @@ export function ResultsSection({
         <SectionFrame
           eyebrow="Pattern"
           title="建物パターン比較"
-          description="日影規制が有効な場合は、低層・中層・最大案を比較します。"
+          description="日影条件が有効な場合は、低層・中層・最大案を比較できます。"
         >
           <div className="rounded-xl border border-dashed border-border bg-white/60 px-4 py-4 text-[11px] text-muted-foreground">
             この条件では建物パターン比較を表示できませんでした。
@@ -336,13 +346,13 @@ export function ResultsSection({
       {result ? (
         <SectionFrame
           eyebrow="Assumption"
-          title="計算前提"
-          description="レポート出力前に、計算の前提だけここで確認できます。"
+          title="計算前提メモ"
+          description="レポートや相談用に、計算前提だけここで確認できます。"
         >
           <div className="space-y-2 rounded-xl border border-border/70 bg-white/72 px-3 py-3 text-[11px] text-muted-foreground">
-            <p>日影は冬至日の 8:00 から 16:00 を 10 分刻みで評価しています。</p>
+            <p>日影は冬至日の 8:00 から 16:00 まで 10 分刻みで計算しています。</p>
             <p>解析上限高さは {MAX_HEIGHT_CAP.toFixed(0)}m です。</p>
-            <p>パターン比較は日影規制が有効な場合のみ最大高さを再探索しています。</p>
+            <p>パターン比較は日影条件が有効な場合のみ、最大高さを基準に分類しています。</p>
           </div>
         </SectionFrame>
       ) : null}
@@ -352,6 +362,7 @@ export function ResultsSection({
         result={result}
         site={site}
         sitePrecision={sitePrecision}
+        roadReady={!hasPendingRoadReview && activeRoadCount > 0}
         roads={roads}
         floorHeights={floorHeights}
         feasibility={feasibilitySnapshot}

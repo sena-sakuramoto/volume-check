@@ -66,6 +66,7 @@ export type RoadSource = 'manual' | 'api' | 'ai' | 'demo';
 export type RoadReviewStatus = 'confirmed' | 'suggested';
 export type RoadConfidence = 'high' | 'medium' | 'low';
 export type SitePrecision = 'approximate' | 'reference' | 'confirmed';
+export type RoadBoundaryDecision = 'road' | 'review' | 'exclude';
 export type OppositeOpenSpaceKind =
   | 'none'
   | 'alley'
@@ -103,6 +104,7 @@ export interface RoadConfig {
   customWidth: string;
   /** Explicit boundary edge indices [start, end] for polygon sites. */
   edgeVertexIndices?: [number, number];
+  boundaryDecision?: RoadBoundaryDecision;
   source?: RoadSource;
   reviewStatus?: RoadReviewStatus;
   confidence?: RoadConfidence;
@@ -189,6 +191,16 @@ export function getSitePrecisionLabel(precision: SitePrecision): string {
 
 export function getSitePrecisionHint(precision: SitePrecision): string {
   return SITE_PRECISION_HINTS[precision];
+}
+
+export const ROAD_BOUNDARY_DECISION_LABELS: Record<RoadBoundaryDecision, string> = {
+  road: '道路',
+  review: '保留',
+  exclude: '除外',
+};
+
+export function getRoadBoundaryDecisionLabel(decision: RoadBoundaryDecision): string {
+  return ROAD_BOUNDARY_DECISION_LABELS[decision];
 }
 
 export const ROAD_WIDTH_PRESETS = [4, 6, 8] as const;

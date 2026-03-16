@@ -5,12 +5,13 @@ import { Plus, Trash2 } from 'lucide-react';
 import type { SiteBoundary } from '@/engine/types';
 import { Input } from '@/components/ui/shadcn/input';
 import {
+  getRoadBoundaryDecisionLabel,
   getOppositeOpenSpaceLabel,
   ROAD_DIRECTION_OPTIONS,
   ROAD_WIDTH_PRESETS,
   OPPOSITE_OPEN_SPACE_OPTIONS,
 } from './site-types';
-import type { RoadConfig, RoadDirection } from './site-types';
+import type { RoadBoundaryDecision, RoadConfig, RoadDirection } from './site-types';
 import { cn } from '@/lib/cn';
 
 interface RoadEditorProps {
@@ -63,7 +64,7 @@ function formatRoadAdjustmentSummary(config: RoadConfig): string | null {
     parts.push(`種別 ${getOppositeOpenSpaceLabel(config.oppositeOpenSpaceKind)}`);
   }
   if ((config.slopeWidthOverride ?? 0) > 0) {
-    parts.push(`斜線基準幅 ${config.slopeWidthOverride}m`);
+    parts.push(`みなし幅員 ${config.slopeWidthOverride}m`);
   }
   if ((config.siteHeightAboveRoad ?? 0) !== 0) {
     parts.push(`高低差 ${config.siteHeightAboveRoad}m`);
@@ -101,13 +102,21 @@ export function RoadEditor({
   const polygonMaxRoads = Math.max(1, edgeCount);
   const maxRoads = siteMode === 'polygon' ? polygonMaxRoads : 4;
   const canAddRoad = roadConfigs.length < maxRoads;
+  const activeRoadCount = roadConfigs.filter((config) => (config.boundaryDecision ?? 'road') === 'road').length;
+  const pendingDecisionCount = roadConfigs.filter((config) => (config.boundaryDecision ?? 'road') === 'review').length;
   const suggestedCount = roadConfigs.filter(
-    (config) => (config.reviewStatus ?? 'confirmed') === 'suggested',
+    (config) =>
+      (config.reviewStatus ?? 'confirmed') === 'suggested' &&
+      (config.boundaryDecision ?? 'road') === 'review',
   ).length;
   const suggestedSources = Array.from(
     new Set(
       roadConfigs
-        .filter((config) => (config.reviewStatus ?? 'confirmed') === 'suggested')
+        .filter(
+          (config) =>
+            (config.reviewStatus ?? 'confirmed') === 'suggested' &&
+            (config.boundaryDecision ?? 'road') === 'review',
+        )
         .map((config) => config.source ?? 'manual'),
     ),
   );
@@ -126,6 +135,7 @@ export function RoadEditor({
         width: 6,
         direction: availableDirection,
         customWidth: '',
+        boundaryDecision: 'road',
         source: 'manual',
         reviewStatus: 'confirmed',
       },
@@ -151,6 +161,7 @@ export function RoadEditor({
     onRoadConfigsChange(
       roadConfigs.map((config) => ({
         ...config,
+        boundaryDecision: config.boundaryDecision === 'exclude' ? 'exclude' : 'road',
         reviewStatus: 'confirmed',
       })),
     );
@@ -159,7 +170,7 @@ export function RoadEditor({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <label className="text-xs font-medium text-muted-foreground">接道設定</label>
+        <label className="text-xs font-medium text-muted-foreground">道路設定</label>
         <div className="flex flex-wrap items-center gap-1.5">
           {canUndo && onUndo ? (
             <button
@@ -202,18 +213,24 @@ export function RoadEditor({
       </div>
 
       <p className="text-[10px] leading-5 text-muted-foreground">
-        まずは幅員だけ合っていれば十分です。後から接する辺や緩和条件を追加してもやり直せます。
+        まずは幅員だけ合っていれば十分です。後から接する辺や斜線補正を追加してもやり直せます。
       </p>
+
+      <div className="rounded-xl border border-border/70 bg-white/70 px-3 py-2 text-[10px] text-muted-foreground">
+        <span>計算に入る道路: {activeRoadCount} 面</span>
+        <span className="mx-2">/</span>
+        <span>保留: {pendingDecisionCount} 面</span>
+      </div>
 
       {suggestedCount > 0 ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-3 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-[11px] font-medium text-amber-950">
-                {getSourceLabel(suggestedSources)} を {suggestedCount} 件読み込みました
+                {getSourceLabel(suggestedSources)} から {suggestedCount} 面の候補を読み込みました
               </p>
               <p className="mt-1 text-[10px] leading-5 text-amber-800">
-                どの辺が前面道路か、幅員が妥当かを確認してからそのまま確定できます。
+                どの辺が本当に道路かを確認してから、そのまま確定してください。
               </p>
             </div>
             <button
@@ -229,7 +246,7 @@ export function RoadEditor({
 
       <div className="space-y-3">
         {roadConfigs.map((config, index) => (
-          <div key={config.id} className="rounded-2xl border border-border bg-card/55 p-3 space-y-3">
+          <div key={config.id} className="space-y-3 rounded-2xl border border-border bg-card/55 p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[10px] text-muted-foreground">道路 {index + 1}</span>
@@ -247,6 +264,9 @@ export function RoadEditor({
                   )}
                 >
                   {(config.reviewStatus ?? 'confirmed') === 'suggested' ? '確認待ち' : '確認済み'}
+                </span>
+                <span className="rounded-full border border-border/80 bg-white/80 px-1.5 py-0.5 text-[9px] text-foreground/80">
+                  {getRoadBoundaryDecisionLabel(config.boundaryDecision ?? 'road')}
                 </span>
                 {getConfidenceLabel(config.confidence) ? (
                   <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-700">
@@ -267,7 +287,7 @@ export function RoadEditor({
 
             {config.sourceLabel || config.sourceDetail || config.reasoning ? (
               <div className="rounded-xl border border-border/70 bg-white/70 px-2.5 py-2 text-[10px] text-muted-foreground">
-                {config.sourceLabel ? <p>参照ソース: {config.sourceLabel}</p> : null}
+                {config.sourceLabel ? <p>根拠ソース: {config.sourceLabel}</p> : null}
                 {config.sourceDetail ? <p className="mt-1">参照情報: {config.sourceDetail}</p> : null}
                 {typeof config.distance === 'number' ? (
                   <p className="mt-1">敷地辺までの距離: {config.distance.toFixed(2)}m</p>
@@ -302,6 +322,38 @@ export function RoadEditor({
               ))}
             </div>
 
+            <div className="space-y-1">
+              <label className="block text-[10px] text-muted-foreground">辺の扱い</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  { key: 'road', label: '道路' },
+                  { key: 'review', label: '保留' },
+                  { key: 'exclude', label: '除外' },
+                ] as Array<{ key: RoadBoundaryDecision; label: string }>).map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => updateRoad(config.id, { boundaryDecision: option.key })}
+                    className={cn(
+                      'rounded-xl px-2 py-2 text-[11px] font-medium transition-colors',
+                      (config.boundaryDecision ?? 'road') === option.key
+                        ? option.key === 'road'
+                          ? 'bg-primary text-primary-foreground'
+                          : option.key === 'review'
+                            ? 'bg-amber-100 text-amber-900'
+                            : 'bg-slate-200 text-slate-800'
+                        : 'bg-secondary/55 text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] leading-5 text-muted-foreground">
+                `道路` だけ計算に入ります。`保留` は確認待ち、`除外` は候補から外します。
+              </p>
+            </div>
+
             {siteMode === 'polygon' && edgeCount >= 2 && site ? (
               <div className="space-y-1">
                 <label className="block text-[10px] text-muted-foreground">接する辺</label>
@@ -333,7 +385,7 @@ export function RoadEditor({
                       }}
                       className="h-9 w-full rounded-xl border border-input bg-transparent px-3 text-[11px] text-foreground"
                     >
-                      <option value="auto">自動選択</option>
+                      <option value="auto">自動で選ぶ</option>
                       {site.vertices.map((_, i) => {
                         const j = (i + 1) % edgeCount;
                         const start = site.vertices[i];
@@ -376,7 +428,7 @@ export function RoadEditor({
               value={config.customWidth}
               onChange={(event) => {
                 const value = event.target.value;
-                const parsed = parseFloat(value);
+                const parsed = Number.parseFloat(value);
                 updateRoad(config.id, {
                   customWidth: value,
                   ...(!Number.isNaN(parsed) && parsed > 0 ? { width: parsed } : {}),
@@ -393,12 +445,12 @@ export function RoadEditor({
               <summary className="cursor-pointer list-none px-3 py-3 text-[11px] font-medium text-foreground">
                 道路斜線の詳細設定
                 <span className="ml-1 text-muted-foreground">
-                  前面後退 / 対側空地 / 斜線基準幅 / 高低差
+                  前面後退 / 対側空地 / みなし幅員 / 高低差
                 </span>
               </summary>
               <div className="space-y-3 border-t border-border/70 px-3 py-3">
                 <p className="text-[10px] leading-5 text-muted-foreground">
-                  API や図面読取では拾い切れない条件だけ入れてください。不要なら 0 のままで構いません。
+                  API や図面読取では拾いきれない条件だけ入れてください。不要なら 0 のままで問題ありません。
                 </p>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -468,7 +520,7 @@ export function RoadEditor({
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <label className="block text-[10px] text-muted-foreground">斜線基準幅 (m)</label>
+                    <label className="block text-[10px] text-muted-foreground">みなし幅員 (m)</label>
                     <Input
                       type="number"
                       inputMode="decimal"
@@ -476,7 +528,7 @@ export function RoadEditor({
                       onChange={(event) => updateRoad(config.id, {
                         slopeWidthOverride: parseOptionalNumber(event.target.value),
                       })}
-                      placeholder="例 8"
+                      placeholder="例: 8"
                       min="0"
                       step="0.1"
                       className="h-8 text-[11px]"
@@ -495,7 +547,7 @@ export function RoadEditor({
 
                 <div className="space-y-1">
                   <label className="block text-[10px] text-muted-foreground">
-                    高低差 (m)
+                    敷地と道路の高低差 (m)
                     <span className="ml-1 text-[9px]">敷地が道路より高い場合はプラス</span>
                   </label>
                   <Input
@@ -505,7 +557,7 @@ export function RoadEditor({
                     onChange={(event) => updateRoad(config.id, {
                       siteHeightAboveRoad: parseOptionalNumber(event.target.value),
                     })}
-                    placeholder="例 1.2"
+                    placeholder="例: 1.2"
                     step="0.1"
                     className="h-8 text-[11px]"
                   />
@@ -518,10 +570,10 @@ export function RoadEditor({
                     onChange={(event) => updateRoad(config.id, { enableTwoA35m: event.target.checked })}
                     className="h-4 w-4 rounded border-border"
                   />
-                  2Aかつ35m以内の緩和を使う
+                  2A かつ 35m 緩和を使う
                 </label>
                 <p className="text-[10px] leading-5 text-muted-foreground">
-                  幅員の大きい前面道路がある場合や、他の前面道路中心線から 10m を超える範囲で使う想定です。
+                  幅員の大きい前面道路がある場合や、他の前面道路中心線から 10m を超えて使う条件で有効です。
                 </p>
               </div>
             </details>

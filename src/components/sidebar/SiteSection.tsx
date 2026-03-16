@@ -158,10 +158,17 @@ export function SiteSection({
     (configs: RoadConfig[]): RoadConfig[] =>
       configs.map((config) => ({
         ...config,
+        boundaryDecision: config.boundaryDecision ?? 'road',
         edgeVertexIndices: config.edgeVertexIndices
           ? [...config.edgeVertexIndices] as [number, number]
           : undefined,
       })),
+    [],
+  );
+
+  const countActiveRoads = useCallback(
+    (configs: RoadConfig[]) =>
+      configs.filter((config) => (config.boundaryDecision ?? 'road') === 'road').length,
     [],
   );
 
@@ -171,6 +178,7 @@ export function SiteSection({
       width: 6,
       direction: 'south',
       customWidth: '',
+      boundaryDecision: 'road',
       source: 'manual',
       reviewStatus: 'confirmed',
     },
@@ -204,6 +212,7 @@ export function SiteSection({
       width: road.width,
       direction: bearingToDirection(road.bearing),
       customWidth: '',
+      boundaryDecision: 'road',
       source: 'demo',
       reviewStatus: 'confirmed',
       frontSetback: road.frontSetback,
@@ -223,6 +232,7 @@ export function SiteSection({
             width: 6,
             direction: 'south',
             customWidth: '',
+            boundaryDecision: 'road',
             source: 'demo',
             reviewStatus: 'confirmed',
           }],
@@ -276,6 +286,10 @@ export function SiteSection({
           direction: candidate.direction,
           customWidth: '',
           edgeVertexIndices: candidate.edgeVertexIndices,
+          boundaryDecision:
+            candidate.source === 'manual' || candidate.source === 'demo' || source === 'manual' || source === 'demo'
+              ? 'road'
+              : 'review',
           source: candidate.source ?? source,
           reviewStatus:
             candidate.source === 'manual' ||
@@ -308,6 +322,7 @@ export function SiteSection({
             width: 6,
             direction: 'south',
             customWidth: '',
+            boundaryDecision: 'road',
             source: 'manual',
             reviewStatus: 'confirmed',
           },
@@ -319,6 +334,7 @@ export function SiteSection({
         width: road.width,
         direction: bearingToDirection(road.bearing),
         customWidth: '',
+        boundaryDecision: source === 'manual' || source === 'demo' ? 'road' : 'review',
         source,
         reviewStatus: source === 'manual' || source === 'demo' ? 'confirmed' : 'suggested',
         frontSetback: road.frontSetback,
@@ -346,7 +362,7 @@ export function SiteSection({
     setRoadUndoSnapshot(cloneRoadConfigs(roadConfigs));
     onRoadConfigsChange(nextConfigs);
     onRoadsChange(detectedRoads);
-    onCornerLotChange(detectedRoads.length >= 2);
+    onCornerLotChange(countActiveRoads(nextConfigs) >= 2);
     setRoadSuggestionSnapshot(
       source === 'api' || source === 'ai' ? cloneRoadConfigs(nextConfigs) : null,
     );
@@ -359,7 +375,7 @@ export function SiteSection({
     );
     setRoadAssistMessage(options?.message ?? null);
     if (source !== 'manual') setEntryMode(source === 'api' ? 'address' : 'file');
-  }, [buildDetectedRoadConfigs, cloneRoadConfigs, onCornerLotChange, onRoadConfigsChange, onRoadsChange, roadConfigs]);
+  }, [buildDetectedRoadConfigs, cloneRoadConfigs, countActiveRoads, onCornerLotChange, onRoadConfigsChange, onRoadsChange, roadConfigs]);
 
   const buildRoadsForConfigs = useCallback((configs: RoadConfig[]): Road[] => {
     if (effectiveSiteMode === 'rect') {
@@ -374,8 +390,9 @@ export function SiteSection({
   }, [effectiveSiteMode, site, siteWidth, siteDepth]);
 
   const rebuildRoads = useCallback((configs: RoadConfig[]) => {
-    const nextRoads = buildRoadsForConfigs(configs);
-    if (nextRoads.length > 0 || configs.length === 0) {
+    const activeConfigs = configs.filter((config) => (config.boundaryDecision ?? 'road') === 'road');
+    const nextRoads = buildRoadsForConfigs(activeConfigs);
+    if (nextRoads.length > 0 || activeConfigs.length === 0) {
       onRoadsChange(nextRoads);
     }
   }, [buildRoadsForConfigs, onRoadsChange]);
@@ -436,7 +453,7 @@ export function SiteSection({
   const handleRoadConfigsChange = (configs: RoadConfig[]) => {
     setRoadUndoSnapshot(cloneRoadConfigs(roadConfigs));
     onRoadConfigsChange(configs);
-    onCornerLotChange(configs.length >= 2);
+    onCornerLotChange(countActiveRoads(configs) >= 2);
     if (configs.every((config) => (config.reviewStatus ?? 'confirmed') === 'confirmed')) {
       setRoadAssistSource(null);
       setRoadAssistMessage(null);
@@ -452,7 +469,7 @@ export function SiteSection({
     if (!roadUndoSnapshot) return;
     const snapshot = cloneRoadConfigs(roadUndoSnapshot);
     onRoadConfigsChange(snapshot);
-    onCornerLotChange(snapshot.length >= 2);
+    onCornerLotChange(countActiveRoads(snapshot) >= 2);
     rebuildRoads(snapshot);
     if (snapshot.every((config) => (config.reviewStatus ?? 'confirmed') === 'confirmed')) {
       setRoadAssistSource(null);
@@ -464,34 +481,39 @@ export function SiteSection({
       setRoadAssistMessage('1つ前の道路設定に戻しました。');
     }
     setRoadUndoSnapshot(null);
-  }, [cloneRoadConfigs, onCornerLotChange, onRoadConfigsChange, rebuildRoads, roadUndoSnapshot]);
+  }, [cloneRoadConfigs, countActiveRoads, onCornerLotChange, onRoadConfigsChange, rebuildRoads, roadUndoSnapshot]);
 
   const handleRestoreSuggestedRoads = useCallback(() => {
     if (!roadSuggestionSnapshot) return;
     const snapshot = cloneRoadConfigs(roadSuggestionSnapshot);
     setRoadUndoSnapshot(cloneRoadConfigs(roadConfigs));
     onRoadConfigsChange(snapshot);
-    onCornerLotChange(snapshot.length >= 2);
+    onCornerLotChange(countActiveRoads(snapshot) >= 2);
     rebuildRoads(snapshot);
     const suggestedSource =
       snapshot.find((config) => (config.reviewStatus ?? 'confirmed') === 'suggested')?.source ?? null;
     setRoadAssistSource(suggestedSource === 'api' || suggestedSource === 'ai' ? suggestedSource : null);
     setRoadAssistMessage('自動取得した道路候補に戻しました。');
-  }, [cloneRoadConfigs, onCornerLotChange, onRoadConfigsChange, rebuildRoads, roadConfigs, roadSuggestionSnapshot]);
+  }, [cloneRoadConfigs, countActiveRoads, onCornerLotChange, onRoadConfigsChange, rebuildRoads, roadConfigs, roadSuggestionSnapshot]);
 
   const handleResetRoads = useCallback(() => {
     const nextConfigs = createManualRoadConfigs();
     setRoadUndoSnapshot(cloneRoadConfigs(roadConfigs));
     onRoadConfigsChange(nextConfigs);
-    onCornerLotChange(false);
+    onCornerLotChange(countActiveRoads(nextConfigs) >= 2);
     rebuildRoads(nextConfigs);
     setRoadAssistSource(null);
     setRoadAssistMessage(null);
-  }, [cloneRoadConfigs, createManualRoadConfigs, onCornerLotChange, onRoadConfigsChange, rebuildRoads, roadConfigs]);
+  }, [cloneRoadConfigs, countActiveRoads, createManualRoadConfigs, onCornerLotChange, onRoadConfigsChange, rebuildRoads, roadConfigs]);
 
   useEffect(() => {
     if (effectiveSiteMode !== 'polygon' || !site || site.vertices.length < 3) return;
-    onRoadsChange(buildRoadsFromPolygonConfigs(site.vertices, roadConfigs));
+    onRoadsChange(
+      buildRoadsFromPolygonConfigs(
+        site.vertices,
+        roadConfigs.filter((config) => (config.boundaryDecision ?? 'road') === 'road'),
+      ),
+    );
   }, [effectiveSiteMode, site, roadConfigs, onRoadsChange]);
 
   return (

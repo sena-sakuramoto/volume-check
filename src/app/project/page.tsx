@@ -58,6 +58,7 @@ function createDefaultRoadConfigs(): RoadConfig[] {
       width: 6,
       direction: 'south',
       customWidth: '',
+      boundaryDecision: 'road',
       source: 'manual',
       reviewStatus: 'confirmed',
     },
@@ -101,6 +102,7 @@ function buildRoadConfigs(
     width: road.width,
     direction: bearingToRoadDirection(road.bearing),
     customWidth: '',
+    boundaryDecision: 'road',
     source: options?.source ?? 'manual',
     reviewStatus: options?.reviewStatus ?? 'confirmed',
     frontSetback: road.frontSetback,
@@ -163,11 +165,22 @@ export default function ProjectPage() {
     queueMicrotask(syncDisable3DPreference);
   }, [syncDisable3DPreference]);
 
+  const activeRoadConfigs = useMemo(
+    () => roadConfigs.filter((config) => (config.boundaryDecision ?? 'road') === 'road'),
+    [roadConfigs],
+  );
+
+  const hasPendingRoadReview = useMemo(
+    () => roadConfigs.some((config) => (config.boundaryDecision ?? 'road') === 'review'),
+    [roadConfigs],
+  );
+
   const roadsConfirmed = useMemo(
     () =>
-      roadConfigs.length > 0 &&
-      roadConfigs.every((config) => (config.reviewStatus ?? 'confirmed') === 'confirmed'),
-    [roadConfigs],
+      activeRoadConfigs.length > 0 &&
+      !hasPendingRoadReview &&
+      activeRoadConfigs.every((config) => (config.reviewStatus ?? 'confirmed') === 'confirmed'),
+    [activeRoadConfigs, hasPendingRoadReview],
   );
 
   const restoreSavedProject = useCallback(() => {
@@ -195,6 +208,7 @@ export default function ProjectPage() {
         ? saved.roadConfigs.map((config, index) => ({
             ...config,
             id: config.id || String(index + 1),
+            boundaryDecision: config.boundaryDecision ?? 'road',
             source: config.source ?? 'manual',
             reviewStatus: config.reviewStatus ?? 'confirmed',
           }))
@@ -421,6 +435,7 @@ export default function ProjectPage() {
           site={site}
           sitePrecision={sitePrecision}
           roads={roads}
+          roadConfigs={roadConfigs}
           floorHeights={effectiveFloorHeights}
           onFloorHeightsChange={setFloorHeights}
         />
