@@ -98,6 +98,10 @@ interface PlateauLanduseLookupResponse {
     site?: { vertices: { x: number; y: number }[]; area: number };
     siteCoordinates?: [number, number][];
     matchMode?: 'contains' | 'nearby';
+    candidateKind?: 'original' | 'subdivision';
+    splitIndex?: number | null;
+    splitTotal?: number | null;
+    parentArea?: number | null;
     area?: number;
     distancePixels?: number;
     attributes?: Record<string, unknown>;
@@ -110,14 +114,25 @@ interface PlateauLanduseCandidate extends ShapeCandidate {
   id: string;
   label: string;
   matchMode: 'contains' | 'nearby';
+  candidateKind: 'original' | 'subdivision';
+  splitIndex: number | null;
+  splitTotal: number | null;
+  parentArea: number | null;
   area: number | null;
   attributes?: Record<string, unknown>;
 }
 
 function buildPlateauCandidateLabel(candidate: PlateauLanduseCandidate): string {
   const parts = [
-    candidate.matchMode === 'contains' ? '候補' : '近傍',
+    candidate.candidateKind === 'subdivision'
+      ? `仮分筆 ${candidate.splitIndex ?? '?'} / ${candidate.splitTotal ?? '?'}`
+      : candidate.matchMode === 'contains'
+        ? '候補'
+        : '近傍',
     candidate.area ? `約${Math.round(candidate.area)}m²` : null,
+    candidate.candidateKind === 'subdivision' && candidate.parentArea
+      ? `元敷地 約${Math.round(candidate.parentArea)}m²`
+      : null,
     typeof candidate.attributes?.['分類'] === 'string'
       ? String(candidate.attributes['分類'])
       : null,
@@ -186,6 +201,10 @@ function parsePlateauLanduseCandidates(payload: PlateauLanduseLookupResponse): P
       containsPoint: matchMode === 'contains',
       distanceMeters: null,
       matchMode,
+      candidateKind: item.candidateKind === 'subdivision' ? 'subdivision' : 'original',
+      splitIndex: typeof item.splitIndex === 'number' ? item.splitIndex : null,
+      splitTotal: typeof item.splitTotal === 'number' ? item.splitTotal : null,
+      parentArea: typeof item.parentArea === 'number' ? item.parentArea : null,
       area: typeof item.area === 'number' && Number.isFinite(item.area) ? item.area : null,
       attributes: item.attributes,
       label: '',
@@ -856,7 +875,7 @@ export function AddressSearch({
             ))}
           </select>
           <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
-            PLATEAU の土地利用形状です。筆界確定ではないため、最後に辺と接道を確認してください。
+            PLATEAU の土地利用形状をもとにしています。仮分筆候補は目安なので、最後に辺と接道を確認してください。
           </p>
         </div>
       )}

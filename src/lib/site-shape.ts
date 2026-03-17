@@ -13,6 +13,13 @@ export interface ApproximateRectOptions {
 export const DEFAULT_APPROXIMATE_SITE_WIDTH = 12;
 export const DEFAULT_APPROXIMATE_SITE_DEPTH = 20;
 
+export interface LocalGeoProjector {
+  toLocal: (point: GeoPoint) => Point2D;
+  toLocalRing: (ring: GeoPoint[]) => Point2D[];
+  toGeo: (point: Point2D) => GeoPoint;
+  toGeoRing: (ring: Point2D[]) => GeoPoint[];
+}
+
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
@@ -104,7 +111,7 @@ export function extractGeoRingFromPayload(payload: unknown): GeoPoint[] | null {
   return null;
 }
 
-function toLocalVertices(ring: GeoPoint[]): Point2D[] {
+function createGeoStats(ring: GeoPoint[]) {
   const meanLat = ring.reduce((s, p) => s + p.lat, 0) / ring.length;
   const meanLng = ring.reduce((s, p) => s + p.lng, 0) / ring.length;
   const phi = (meanLat * Math.PI) / 180;
@@ -113,14 +120,55 @@ function toLocalVertices(ring: GeoPoint[]): Point2D[] {
   const metersPerDegLng =
     111412.84 * Math.cos(phi) - 93.5 * Math.cos(3 * phi) + 0.118 * Math.cos(5 * phi);
 
-  const raw = ring.map((p) => ({
+  return { meanLat, meanLng, metersPerDegLat, metersPerDegLng };
+}
+
+export function createLocalGeoProjector(ring: GeoPoint[]): LocalGeoProjector | null {
+  const normalizedRing = normalizeGeoRing(ring);
+  if (normalizedRing.length < 3) return null;
+
+  const { meanLat, meanLng, metersPerDegLat, metersPerDegLng } = createGeoStats(normalizedRing);
+  const raw = normalizedRing.map((p) => ({
     x: (p.lng - meanLng) * metersPerDegLng,
     y: (p.lat - meanLat) * metersPerDegLat,
   }));
 
   const minX = Math.min(...raw.map((v) => v.x));
   const minY = Math.min(...raw.map((v) => v.y));
-  return raw.map((v) => ({ x: v.x - minX, y: v.y - minY }));
+
+  return {
+    toLocal(point) {
+      return {
+        x: (point.lng - meanLng) * metersPerDegLng - minX,
+        y: (point.lat - meanLat) * metersPerDegLat - minY,
+      };
+    },
+    toLocalRing(nextRing) {
+      return nextRing.map((point) => ({
+        x: (point.lng - meanLng) * metersPerDegLng - minX,
+        y: (point.lat - meanLat) * metersPerDegLat - minY,
+      }));
+    },
+    toGeo(point) {
+      return {
+        lat: (point.y + minY) / metersPerDegLat + meanLat,
+        lng: (point.x + minX) / metersPerDegLng + meanLng,
+      };
+    },
+    toGeoRing(nextRing) {
+      return nextRing.map((point) => ({
+        lat: (point.y + minY) / metersPerDegLat + meanLat,
+        lng: (point.x + minX) / metersPerDegLng + meanLng,
+      }));
+    },
+  };
+}
+
+function toLocalVertices(ring: GeoPoint[]): Point2D[] {
+  const projector = createLocalGeoProjector(ring);
+  if (!projector) return [];
+
+  return projector.toLocalRing(ring);
 }
 
 function polygonArea(vertices: Point2D[]): number {
