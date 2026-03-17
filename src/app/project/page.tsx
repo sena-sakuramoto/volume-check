@@ -241,11 +241,9 @@ export default function ProjectPage() {
 
   const [hasNavigated, setHasNavigated] = useState(false);
   const resolvedActiveStep = useMemo<Step>(() => {
-    if (hasNavigated) return activeStep;
-    if (activeStep < 2 && site && roads.length > 0 && roadsConfirmed) return 2;
-    if (activeStep < 3 && zoning && volumeResult && roadsConfirmed) return 3;
+    if (!hasNavigated && activeStep === 1) return 1;
     return activeStep;
-  }, [activeStep, hasNavigated, roads.length, roadsConfirmed, site, volumeResult, zoning]);
+  }, [activeStep, hasNavigated]);
 
   const completedSteps = useMemo(
     () => ({
