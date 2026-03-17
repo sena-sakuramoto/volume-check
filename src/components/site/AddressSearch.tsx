@@ -28,6 +28,7 @@ import {
   toGeoRingFromParcel,
   summarizeDistrictBreakdown,
   type ParcelCandidate,
+  type ShapeCandidate,
   type DistrictBreakdownItem,
 } from './address-search-helpers';
 
@@ -92,6 +93,39 @@ interface PlateauLanduseLookupResponse {
     bearing: number;
   }>;
   siteCoordinates?: [number, number][];
+  candidates?: Array<{
+    id: string;
+    site?: { vertices: { x: number; y: number }[]; area: number };
+    siteCoordinates?: [number, number][];
+    matchMode?: 'contains' | 'nearby';
+    area?: number;
+    distancePixels?: number;
+    attributes?: Record<string, unknown>;
+  }>;
+  matchMode?: 'contains' | 'nearby';
+  attributes?: Record<string, unknown>;
+}
+
+interface PlateauLanduseCandidate extends ShapeCandidate {
+  id: string;
+  label: string;
+  matchMode: 'contains' | 'nearby';
+  area: number | null;
+  attributes?: Record<string, unknown>;
+}
+
+function buildPlateauCandidateLabel(candidate: PlateauLanduseCandidate): string {
+  const parts = [
+    candidate.matchMode === 'contains' ? '候補' : '近傍',
+    candidate.area ? `約${Math.round(candidate.area)}m²` : null,
+    typeof candidate.attributes?.['分類'] === 'string'
+      ? String(candidate.attributes['分類'])
+      : null,
+    typeof candidate.attributes?.['細分類'] === 'string'
+      ? String(candidate.attributes['細分類'])
+      : null,
+  ].filter((value): value is string => Boolean(value));
+  return parts.join(' / ');
 }
 
 function parseSiteCoordinates(value: unknown): [number, number][] | null {
@@ -138,6 +172,31 @@ function parseParcelCandidates(payload: unknown): ParcelCandidate[] {
   return candidates;
 }
 
+function parsePlateauLanduseCandidates(payload: PlateauLanduseLookupResponse): PlateauLanduseCandidate[] {
+  if (!Array.isArray(payload.candidates)) return [];
+
+  const candidates: PlateauLanduseCandidate[] = [];
+  for (const item of payload.candidates) {
+    const coordinates = parseSiteCoordinates(item.siteCoordinates);
+    if (!coordinates) continue;
+    const matchMode = item.matchMode === 'nearby' ? 'nearby' : 'contains';
+    const candidate: PlateauLanduseCandidate = {
+      id: item.id,
+      coordinates: [coordinates],
+      containsPoint: matchMode === 'contains',
+      distanceMeters: null,
+      matchMode,
+      area: typeof item.area === 'number' && Number.isFinite(item.area) ? item.area : null,
+      attributes: item.attributes,
+      label: '',
+    };
+    candidate.label = buildPlateauCandidateLabel(candidate);
+    candidates.push(candidate);
+  }
+
+  return candidates;
+}
+
 export function AddressSearch({
   onSiteChange,
   onSitePrecisionChange,
@@ -154,6 +213,8 @@ export function AddressSearch({
   const [searchStatus, setSearchStatus] = useState<SearchStatus>({ state: 'idle' });
   const [parcelCandidates, setParcelCandidates] = useState<ParcelCandidate[]>([]);
   const [selectedParcelIndex, setSelectedParcelIndex] = useState<number>(-1);
+  const [plateauCandidates, setPlateauCandidates] = useState<PlateauLanduseCandidate[]>([]);
+  const [selectedPlateauIndex, setSelectedPlateauIndex] = useState<number>(-1);
   const [districtBreakdown, setDistrictBreakdown] = useState<DistrictBreakdownItem[]>([]);
   const [parcelStatusMessage, setParcelStatusMessage] = useState<string | null>(null);
 
@@ -368,6 +429,8 @@ export function AddressSearch({
     setDistrictBreakdown([]);
     setParcelCandidates([]);
     setSelectedParcelIndex(-1);
+    setPlateauCandidates([]);
+    setSelectedPlateauIndex(-1);
     setParcelStatusMessage(null);
 
     try {
@@ -484,7 +547,24 @@ export function AddressSearch({
 
       if (!siteDetected && plateauLanduseRes.status === 'fulfilled' && plateauLanduseRes.value.ok) {
         const landuseData: PlateauLanduseLookupResponse = await plateauLanduseRes.value.json();
-        if (landuseData.site && Array.isArray(landuseData.site.vertices) && landuseData.site.vertices.length >= 3) {
+        const candidates = parsePlateauLanduseCandidates(landuseData);
+        if (candidates.length > 0) {
+          setPlateauCandidates(candidates);
+          const defaultIndex = pickDefaultParcelIndex(candidates);
+          setSelectedPlateauIndex(defaultIndex);
+
+          const selectedCandidate = defaultIndex >= 0 ? candidates[defaultIndex] : candidates[0];
+          const selectedRing = toGeoRingFromParcel(selectedCandidate);
+          const applied = await applyGeoRingGeometry(selectedRing, lat, lng);
+          siteDetected = applied.siteDetected;
+          selectedSiteCoordinates = applied.siteCoordinates;
+
+          setParcelStatusMessage(
+            candidates.length > 1
+              ? '筆界データが見つからなかったため、PLATEAUの土地利用候補から概算敷地を配置しました。必要なら候補を切り替えてください。'
+              : '筆界データが見つからなかったため、PLATEAUの土地利用形状から概算敷地を配置しました。辺と道路を確認して調整してください。',
+          );
+        } else if (landuseData.site && Array.isArray(landuseData.site.vertices) && landuseData.site.vertices.length >= 3) {
           onSiteChange(landuseData.site);
           onSitePrecisionChange('approximate');
           siteDetected = true;
@@ -647,6 +727,41 @@ export function AddressSearch({
     }
   }, [parcelCandidates, applyGeoRingGeometry, fetchZoning, applyZoningResult]);
 
+  const handlePlateauChange = useCallback(async (nextIndex: number) => {
+    if (!Number.isInteger(nextIndex) || nextIndex < 0) return;
+    setSelectedPlateauIndex(nextIndex);
+
+    const latLng = latLngRef.current;
+    const confirmedAddress = confirmedAddressRef.current;
+    const candidate = plateauCandidates[nextIndex] ?? null;
+    if (!candidate || !latLng || !confirmedAddress) return;
+
+    const ring = toGeoRingFromParcel(candidate);
+    const applied = await applyGeoRingGeometry(ring, latLng.lat, latLng.lng);
+
+    setParcelStatusMessage(
+      'PLATEAUの土地利用候補を切り替えました。道路候補と敷地辺を確認してから進めてください。',
+    );
+
+    setSearchStatus({
+      state: 'zoning-loading',
+      address: confirmedAddress,
+      lat: latLng.lat,
+      lng: latLng.lng,
+    });
+
+    try {
+      const zoningData = await fetchZoning(latLng.lat, latLng.lng, applied.siteCoordinates);
+      if (!zoningData) {
+        setSearchStatus({ state: 'zoning-not-found', address: confirmedAddress });
+        return;
+      }
+      applyZoningResult(zoningData, confirmedAddress, applied.siteDetected);
+    } catch {
+      setSearchStatus({ state: 'error', message: '用途地域の取得に失敗しました。' });
+    }
+  }, [plateauCandidates, applyGeoRingGeometry, fetchZoning, applyZoningResult]);
+
   const parcelOptions = parcelCandidates.map((parcel, index) => ({
     key: `${parcel.chiban}-${index}`,
     value: String(index),
@@ -657,6 +772,12 @@ export function AddressSearch({
         ? `約${Math.round(parcel.distanceMeters)}m`
         : null,
     ].filter(Boolean).join(' / '),
+  }));
+
+  const plateauOptions = plateauCandidates.map((candidate, index) => ({
+    key: `${candidate.id}-${index}`,
+    value: String(index),
+    label: candidate.label,
   }));
 
   return (
@@ -710,6 +831,33 @@ export function AddressSearch({
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {parcelCandidates.length === 0 && plateauCandidates.length > 0 && (
+        <div className="rounded-lg border border-white/70 bg-white/72 px-2.5 py-2 shadow-sm">
+          <div className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+            <MapPin className="h-3 w-3" />
+            PLATEAU の敷地候補を選択
+          </div>
+          <select
+            value={selectedPlateauIndex >= 0 ? String(selectedPlateauIndex) : '0'}
+            onChange={(e) => {
+              if (e.target.value === '') return;
+              void handlePlateauChange(Number(e.target.value));
+            }}
+            disabled={isSearching}
+            className="h-8 w-full rounded border border-input bg-background px-2 text-xs text-foreground"
+          >
+            {plateauOptions.map((option) => (
+              <option key={option.key} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
+            PLATEAU の土地利用形状です。筆界確定ではないため、最後に辺と接道を確認してください。
+          </p>
         </div>
       )}
 

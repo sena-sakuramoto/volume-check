@@ -76,6 +76,7 @@ type LanduseCandidate = {
   distance: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   properties: any;
+  matchMode: 'contains' | 'nearby';
 };
 
 function pickBestCandidate(
@@ -89,6 +90,32 @@ function pickBestCandidate(
     return [...nearbyCandidates].sort((a, b) => a.distance - b.distance || a.area - b.area)[0];
   }
   return null;
+}
+
+function serializeRingKey(ring: [number, number][]): string {
+  return ring
+    .map(([lng, lat]) => `${lng.toFixed(7)},${lat.toFixed(7)}`)
+    .join('|');
+}
+
+function buildSitePayload(candidate: LanduseCandidate) {
+  const geoRing = candidate.ring.map(([pointLng, pointLat]) => ({
+    lat: pointLat,
+    lng: pointLng,
+  }));
+  const site = buildSiteFromGeoRing(geoRing);
+  if (!site) return null;
+
+  const road = inferDefaultRoadFromVertices(site.vertices, 6);
+  return {
+    site,
+    roads: road ? [road] : [],
+    siteCoordinates: candidate.ring,
+    attributes: candidate.properties,
+    matchMode: candidate.matchMode,
+    area: Number(site.area.toFixed(1)),
+    distancePixels: Number(candidate.distance.toFixed(2)),
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -132,6 +159,7 @@ export async function POST(req: NextRequest) {
           area,
           distance,
           properties: feature.properties,
+          matchMode: 'contains' as const,
         };
 
         if (pointInFeatureGeometry(pixelX, pixelY, feature)) {
@@ -140,7 +168,10 @@ export async function POST(req: NextRequest) {
         }
 
         if (distance <= NEARBY_PIXEL_THRESHOLD) {
-          nearbyCandidates.push(candidate);
+          nearbyCandidates.push({
+            ...candidate,
+            matchMode: 'nearby',
+          });
         }
       }
     }
@@ -150,23 +181,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'PLATEAU土地利用形状が見つかりませんでした' }, { status: 404 });
     }
 
-    const geoRing = selectedCandidate.ring.map(([pointLng, pointLat]) => ({
-      lat: pointLat,
-      lng: pointLng,
-    }));
-    const site = buildSiteFromGeoRing(geoRing);
-    if (!site) {
+    const mergedCandidates = [...containingCandidates, ...nearbyCandidates]
+      .sort((a, b) => {
+        if (a.matchMode !== b.matchMode) return a.matchMode === 'contains' ? -1 : 1;
+        return a.matchMode === 'contains'
+          ? a.area - b.area
+          : a.distance - b.distance || a.area - b.area;
+      })
+      .filter((candidate, index, array) => {
+        const key = serializeRingKey(candidate.ring);
+        return array.findIndex((item) => serializeRingKey(item.ring) === key) === index;
+      })
+      .slice(0, 6);
+
+    const selectedPayload = buildSitePayload(selectedCandidate);
+    if (!selectedPayload) {
       return NextResponse.json({ error: 'PLATEAU土地利用形状を敷地へ変換できませんでした' }, { status: 422 });
     }
 
-    const road = inferDefaultRoadFromVertices(site.vertices, 6);
     return NextResponse.json({
-      site,
-      roads: road ? [road] : [],
-      siteCoordinates: selectedCandidate.ring,
+      ...selectedPayload,
       source: 'plateau-landuse',
-      attributes: selectedCandidate.properties,
-      matchMode: containingCandidates.length > 0 ? 'contains' : 'nearby',
+      candidates: mergedCandidates
+        .map((candidate, index) => {
+          const payload = buildSitePayload(candidate);
+          if (!payload) return null;
+          return {
+            id: `plateau-${index + 1}`,
+            ...payload,
+          };
+        })
+        .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null),
     });
   } catch (error) {
     console.error('[plateau-landuse-lookup] Error:', error);

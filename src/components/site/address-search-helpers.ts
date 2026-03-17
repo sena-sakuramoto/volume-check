@@ -5,6 +5,12 @@ export interface ParcelCandidate {
   distanceMeters?: number | null;
 }
 
+export interface ShapeCandidate {
+  coordinates: [number, number][][];
+  containsPoint?: boolean;
+  distanceMeters?: number | null;
+}
+
 export interface DistrictBreakdownItem {
   district: string;
   ratio: number;
@@ -18,13 +24,13 @@ export interface GeoRingPoint {
   lng: number;
 }
 
-export function pickDefaultParcelIndex(parcels: ParcelCandidate[]): number {
+export function pickDefaultParcelIndex(parcels: ShapeCandidate[]): number {
   if (!Array.isArray(parcels) || parcels.length === 0) return -1;
   const containsPointIndex = parcels.findIndex((parcel) => parcel.containsPoint);
   return containsPointIndex >= 0 ? containsPointIndex : -1;
 }
 
-export function toGeoRingFromParcel(parcel: ParcelCandidate): GeoRingPoint[] | null {
+export function toGeoRingFromParcel(parcel: ShapeCandidate): GeoRingPoint[] | null {
   const outer = parcel.coordinates?.[0];
   if (!Array.isArray(outer) || outer.length < 3) return null;
 
