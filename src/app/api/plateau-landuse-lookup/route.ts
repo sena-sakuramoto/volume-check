@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Pbf from 'pbf';
 import { VectorTile } from '@mapbox/vector-tile';
-import {
-  buildSiteFromGeoRing,
-  createLocalGeoProjector,
-  inferDefaultRoadFromVertices,
-  type GeoPoint,
-} from '@/lib/site-shape';
-import type { Point2D, SiteBoundary } from '@/engine/types';
+import { buildSiteFromGeoRing, inferDefaultRoadFromVertices } from '@/lib/site-shape';
 import {
   featureGeometryToLatLng,
   latLngToPixel,
@@ -23,25 +17,14 @@ const TOKYO23_LANDUSE_PREFIX =
   '13100_tokyo23ku_2020_3Dtiles_etc_1_op/07_landuse/13100_tokyo23ku_2020_luse';
 const TILE_ZOOM = 14;
 const NEARBY_PIXEL_THRESHOLD = 768;
-const MAX_CANDIDATES = 8;
-const SUBDIVISION_MIN_AREA = 400;
-const SUBDIVISION_MAX_AREA = 8000;
-const SUBDIVISION_MIN_CHILD_AREA = 120;
-
-type MatchMode = 'contains' | 'nearby';
-type CandidateKind = 'original' | 'subdivision';
+const MAX_CANDIDATES = 6;
 
 type LanduseCandidate = {
   ring: [number, number][];
-  site: SiteBoundary;
   area: number;
   distance: number;
   properties: Record<string, unknown>;
-  matchMode: MatchMode;
-  candidateKind: CandidateKind;
-  splitIndex?: number;
-  splitTotal?: number;
-  parentArea?: number;
+  matchMode: 'contains' | 'nearby';
 };
 
 function pickOuterRing(rings: [number, number][][]): [number, number][] | null {
@@ -96,25 +79,17 @@ function computeFeaturePixelDistance(
   return Math.hypot(dx, dy);
 }
 
-function buildOriginalCandidate(
-  ring: [number, number][],
-  properties: Record<string, unknown>,
-  distance: number,
-  matchMode: MatchMode,
+function pickBestCandidate(
+  containingCandidates: LanduseCandidate[],
+  nearbyCandidates: LanduseCandidate[],
 ): LanduseCandidate | null {
-  const geoRing = ring.map(([lng, lat]) => ({ lat, lng }));
-  const site = buildSiteFromGeoRing(geoRing);
-  if (!site) return null;
-
-  return {
-    ring,
-    site,
-    area: site.area,
-    distance,
-    properties,
-    matchMode,
-    candidateKind: 'original',
-  };
+  if (containingCandidates.length > 0) {
+    return [...containingCandidates].sort((a, b) => a.area - b.area)[0];
+  }
+  if (nearbyCandidates.length > 0) {
+    return [...nearbyCandidates].sort((a, b) => a.distance - b.distance || a.area - b.area)[0];
+  }
+  return null;
 }
 
 function serializeRingKey(ring: [number, number][]): string {
@@ -123,207 +98,24 @@ function serializeRingKey(ring: [number, number][]): string {
     .join('|');
 }
 
-function normalizePolygon(points: Point2D[]): Point2D[] {
-  const normalized: Point2D[] = [];
-  for (const point of points) {
-    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
-    const prev = normalized[normalized.length - 1];
-    if (prev && Math.abs(prev.x - point.x) < 1e-6 && Math.abs(prev.y - point.y) < 1e-6) continue;
-    normalized.push(point);
-  }
-
-  while (normalized.length >= 2) {
-    const first = normalized[0];
-    const last = normalized[normalized.length - 1];
-    if (Math.abs(first.x - last.x) < 1e-6 && Math.abs(first.y - last.y) < 1e-6) {
-      normalized.pop();
-      continue;
-    }
-    break;
-  }
-
-  return normalized;
-}
-
-function pointOnSegment(point: Point2D, start: Point2D, end: Point2D): boolean {
-  const cross = (point.y - start.y) * (end.x - start.x) - (point.x - start.x) * (end.y - start.y);
-  if (Math.abs(cross) > 1e-6) return false;
-
-  const dot = (point.x - start.x) * (end.x - start.x) + (point.y - start.y) * (end.y - start.y);
-  if (dot < -1e-6) return false;
-
-  const squaredLength = (end.x - start.x) ** 2 + (end.y - start.y) ** 2;
-  if (dot - squaredLength > 1e-6) return false;
-
-  return true;
-}
-
-function pointInPolygon(point: Point2D, polygon: Point2D[]): boolean {
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].x;
-    const yi = polygon[i].y;
-    const xj = polygon[j].x;
-    const yj = polygon[j].y;
-
-    if (pointOnSegment(point, polygon[j], polygon[i])) return true;
-
-    const intersects =
-      yi > point.y !== yj > point.y &&
-      point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || Number.EPSILON) + xi;
-
-    if (intersects) inside = !inside;
-  }
-  return inside;
-}
-
-function clipPolygon(
-  polygon: Point2D[],
-  inside: (point: Point2D) => boolean,
-  intersect: (start: Point2D, end: Point2D) => Point2D,
-): Point2D[] {
-  if (polygon.length === 0) return [];
-  const output: Point2D[] = [];
-
-  for (let i = 0; i < polygon.length; i++) {
-    const current = polygon[i];
-    const previous = polygon[(i + polygon.length - 1) % polygon.length];
-    const currentInside = inside(current);
-    const previousInside = inside(previous);
-
-    if (currentInside) {
-      if (!previousInside) output.push(intersect(previous, current));
-      output.push(current);
-    } else if (previousInside) {
-      output.push(intersect(previous, current));
-    }
-  }
-
-  return normalizePolygon(output);
-}
-
-function clipPolygonByAxis(polygon: Point2D[], axis: 'x' | 'y', value: number, keepGreater: boolean): Point2D[] {
-  return clipPolygon(
-    polygon,
-    (point) => (keepGreater ? point[axis] >= value - 1e-6 : point[axis] <= value + 1e-6),
-    (start, end) => {
-      const delta = end[axis] - start[axis];
-      if (Math.abs(delta) < 1e-9) {
-        return axis === 'x'
-          ? { x: value, y: start.y }
-          : { x: start.x, y: value };
-      }
-      const t = (value - start[axis]) / delta;
-      return {
-        x: start.x + (end.x - start.x) * t,
-        y: start.y + (end.y - start.y) * t,
-      };
-    },
-  );
-}
-
-function clipPolygonToBand(
-  polygon: Point2D[],
-  axis: 'x' | 'y',
-  minValue: number,
-  maxValue: number,
-): Point2D[] {
-  const clippedMin = clipPolygonByAxis(polygon, axis, minValue, true);
-  if (clippedMin.length < 3) return [];
-  return clipPolygonByAxis(clippedMin, axis, maxValue, false);
-}
-
-function getSubdivisionCount(area: number): number {
-  if (area > 2400) return 4;
-  if (area > 1200) return 3;
-  if (area > SUBDIVISION_MIN_AREA) return 2;
-  return 0;
-}
-
-function expandSubdividedCandidates(candidate: LanduseCandidate, queryPoint: GeoPoint): LanduseCandidate[] {
-  if (candidate.area < SUBDIVISION_MIN_AREA || candidate.area > SUBDIVISION_MAX_AREA) return [];
-
-  const geoRing = candidate.ring.map(([lng, lat]) => ({ lat, lng }));
-  const projector = createLocalGeoProjector(geoRing);
-  if (!projector) return [];
-
-  const localRing = normalizePolygon(projector.toLocalRing(geoRing));
-  if (localRing.length < 3) return [];
-
-  const minX = Math.min(...localRing.map((point) => point.x));
-  const maxX = Math.max(...localRing.map((point) => point.x));
-  const minY = Math.min(...localRing.map((point) => point.y));
-  const maxY = Math.max(...localRing.map((point) => point.y));
-  const width = maxX - minX;
-  const height = maxY - minY;
-  const axis: 'x' | 'y' = width >= height ? 'x' : 'y';
-  const span = axis === 'x' ? width : height;
-
-  if (!(span > 0)) return [];
-
-  const splitTotal = getSubdivisionCount(candidate.area);
-  if (splitTotal <= 1) return [];
-
-  const queryLocal = projector.toLocal(queryPoint);
-  const children: LanduseCandidate[] = [];
-
-  for (let i = 0; i < splitTotal; i++) {
-    const bandStart = (axis === 'x' ? minX : minY) + (span * i) / splitTotal;
-    const bandEnd = (axis === 'x' ? minX : minY) + (span * (i + 1)) / splitTotal;
-    const clipped = clipPolygonToBand(localRing, axis, bandStart, bandEnd);
-    if (clipped.length < 3) continue;
-
-    const childGeoRing = projector
-      .toGeoRing(clipped)
-      .map((point) => [point.lng, point.lat] as [number, number]);
-    const childGeoPoints = childGeoRing.map(([lng, lat]) => ({ lat, lng }));
-    const childSite = buildSiteFromGeoRing(childGeoPoints);
-    if (!childSite || childSite.area < SUBDIVISION_MIN_CHILD_AREA) continue;
-
-    children.push({
-      ring: childGeoRing,
-      site: childSite,
-      area: childSite.area,
-      distance: pointInPolygon(queryLocal, clipped) ? 0 : candidate.distance,
-      properties: candidate.properties,
-      matchMode: pointInPolygon(queryLocal, clipped) ? 'contains' : candidate.matchMode,
-      candidateKind: 'subdivision',
-      splitIndex: i + 1,
-      splitTotal,
-      parentArea: candidate.area,
-    });
-  }
-
-  return children;
-}
-
 function buildSitePayload(candidate: LanduseCandidate) {
-  const road = inferDefaultRoadFromVertices(candidate.site.vertices, 6);
+  const geoRing = candidate.ring.map(([pointLng, pointLat]) => ({
+    lat: pointLat,
+    lng: pointLng,
+  }));
+  const site = buildSiteFromGeoRing(geoRing);
+  if (!site) return null;
+
+  const road = inferDefaultRoadFromVertices(site.vertices, 6);
   return {
-    site: candidate.site,
+    site,
     roads: road ? [road] : [],
     siteCoordinates: candidate.ring,
     attributes: candidate.properties,
     matchMode: candidate.matchMode,
-    area: Number(candidate.area.toFixed(1)),
+    area: Number(site.area.toFixed(1)),
     distancePixels: Number(candidate.distance.toFixed(2)),
-    candidateKind: candidate.candidateKind,
-    splitIndex: candidate.splitIndex ?? null,
-    splitTotal: candidate.splitTotal ?? null,
-    parentArea: candidate.parentArea ? Number(candidate.parentArea.toFixed(1)) : null,
   };
-}
-
-function sortCandidates(a: LanduseCandidate, b: LanduseCandidate): number {
-  if (a.matchMode !== b.matchMode) return a.matchMode === 'contains' ? -1 : 1;
-  if (a.candidateKind !== b.candidateKind) return a.candidateKind === 'subdivision' ? -1 : 1;
-  if (a.matchMode === 'contains') return a.area - b.area;
-  return a.distance - b.distance || a.area - b.area;
-}
-
-function pickBestCandidate(candidates: LanduseCandidate[]): LanduseCandidate | null {
-  if (candidates.length === 0) return null;
-  return [...candidates].sort(sortCandidates)[0] ?? null;
 }
 
 export async function POST(req: NextRequest) {
@@ -334,7 +126,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
     const { lat, lng } = parsed;
-    const queryPoint = { lat, lng };
 
     const { tileX, tileY } = latLngToTile(lat, lng, TILE_ZOOM);
     const entryPath = `${TOKYO23_LANDUSE_PREFIX}/${TILE_ZOOM}/${tileX}/${tileY}.mvt`;
@@ -351,7 +142,8 @@ export async function POST(req: NextRequest) {
 
     const extent = layers[0][1].feature(0).extent;
     const { pixelX, pixelY } = latLngToPixel(lat, lng, TILE_ZOOM, tileX, tileY, extent);
-    const originalCandidates: LanduseCandidate[] = [];
+    const containingCandidates: LanduseCandidate[] = [];
+    const nearbyCandidates: LanduseCandidate[] = [];
 
     for (const [, layer] of layers) {
       for (let i = 0; i < layer.length; i++) {
@@ -360,54 +152,66 @@ export async function POST(req: NextRequest) {
         const ring = pickOuterRing(rings);
         if (!ring) continue;
 
+        const area = computeRingArea(ring);
         const distance = computeFeaturePixelDistance(feature, pixelX, pixelY);
-        const matchMode: MatchMode = pointInFeatureGeometry(pixelX, pixelY, feature)
-          ? 'contains'
-          : distance <= NEARBY_PIXEL_THRESHOLD
-            ? 'nearby'
-            : 'nearby';
-        if (matchMode === 'nearby' && distance > NEARBY_PIXEL_THRESHOLD) continue;
-
-        const candidate = buildOriginalCandidate(
+        const candidate = {
           ring,
-          (feature.properties ?? {}) as Record<string, unknown>,
+          area,
           distance,
-          matchMode,
-        );
-        if (candidate) originalCandidates.push(candidate);
+          properties: (feature.properties ?? {}) as Record<string, unknown>,
+          matchMode: 'contains' as const,
+        };
+
+        if (pointInFeatureGeometry(pixelX, pixelY, feature)) {
+          containingCandidates.push(candidate);
+          continue;
+        }
+
+        if (distance <= NEARBY_PIXEL_THRESHOLD) {
+          nearbyCandidates.push({
+            ...candidate,
+            matchMode: 'nearby',
+          });
+        }
       }
     }
 
-    if (originalCandidates.length === 0) {
+    const selectedCandidate = pickBestCandidate(containingCandidates, nearbyCandidates);
+    if (!selectedCandidate) {
       return NextResponse.json({ error: 'PLATEAU の土地利用形状が見つかりませんでした。' }, { status: 404 });
     }
 
-    const subdividedCandidates = originalCandidates.flatMap((candidate) =>
-      expandSubdividedCandidates(candidate, queryPoint),
-    );
-
-    const mergedCandidates = [...originalCandidates, ...subdividedCandidates]
-      .sort(sortCandidates)
+    const mergedCandidates = [...containingCandidates, ...nearbyCandidates]
+      .sort((a, b) => {
+        if (a.matchMode !== b.matchMode) return a.matchMode === 'contains' ? -1 : 1;
+        return a.matchMode === 'contains'
+          ? a.area - b.area
+          : a.distance - b.distance || a.area - b.area;
+      })
       .filter((candidate, index, array) => {
         const key = serializeRingKey(candidate.ring);
         return array.findIndex((item) => serializeRingKey(item.ring) === key) === index;
       })
       .slice(0, MAX_CANDIDATES);
 
-    const selectedCandidate = pickBestCandidate(mergedCandidates);
-    if (!selectedCandidate) {
-      return NextResponse.json({ error: 'PLATEAU の土地利用形状が見つかりませんでした。' }, { status: 404 });
+    const selectedPayload = buildSitePayload(selectedCandidate);
+    if (!selectedPayload) {
+      return NextResponse.json({ error: 'PLATEAU の土地利用形状を敷地へ変換できませんでした。' }, { status: 422 });
     }
 
-    const selectedPayload = buildSitePayload(selectedCandidate);
     return NextResponse.json({
       ...selectedPayload,
       source: 'plateau-landuse',
       candidates: mergedCandidates
-        .map((candidate, index) => ({
-          id: `plateau-${index + 1}`,
-          ...buildSitePayload(candidate),
-        })),
+        .map((candidate, index) => {
+          const payload = buildSitePayload(candidate);
+          if (!payload) return null;
+          return {
+            id: `plateau-${index + 1}`,
+            ...payload,
+          };
+        })
+        .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null),
     });
   } catch (error) {
     console.error('[plateau-landuse-lookup] Error:', error);
