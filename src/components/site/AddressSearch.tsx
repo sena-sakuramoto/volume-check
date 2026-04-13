@@ -4,8 +4,10 @@ import { useState, useRef, useCallback } from 'react';
 import type { ZoningDistrict, FireDistrict, HeightDistrict } from '@/engine/types';
 import { Input } from '@/components/ui/shadcn/input';
 import { Button } from '@/components/ui/shadcn/button';
+import { lngLatToMeters } from '@/lib/mvt-utils';
 import { Loader2, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 import type { SearchStatus, SiteCallbacks } from './site-types';
+import { ParcelMap } from './ParcelMap';
 import {
   matchDistrict,
   matchFireDistrict,
@@ -36,16 +38,39 @@ export function AddressSearch({
 }: AddressSearchProps) {
   const [address, setAddress] = useState('');
   const [searchStatus, setSearchStatus] = useState<SearchStatus>({ state: 'idle' });
+  const [parcelMode, setParcelMode] = useState(false);
+  const [geocodedPos, setGeocodedPos] = useState<{ lat: number; lng: number } | null>(null);
   const latLngRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const isSearching =
     searchStatus.state === 'loading' || searchStatus.state === 'zoning-loading';
+
+  const handleParcelSelect = useCallback(
+    (coordinates: [number, number][][]) => {
+      if (!geocodedPos) return;
+      const outerRing = coordinates[0];
+      if (!outerRing || outerRing.length < 3) return;
+      const vertices = lngLatToMeters(outerRing, geocodedPos.lat, geocodedPos.lng);
+      let area = 0;
+      for (let i = 0; i < vertices.length; i++) {
+        const j = (i + 1) % vertices.length;
+        area += vertices[i].x * vertices[j].y;
+        area -= vertices[j].x * vertices[i].y;
+      }
+      area = Math.abs(area) / 2;
+      onSiteChange({ vertices, area });
+      setParcelMode(false);
+    },
+    [geocodedPos, onSiteChange]
+  );
 
   const handleSearch = useCallback(async () => {
     const trimmed = address.trim();
     if (!trimmed) return;
 
     setSearchStatus({ state: 'loading' });
+    setParcelMode(false);
+    setGeocodedPos(null);
 
     try {
       const geocodeRes = await fetch('/api/geocode', {
@@ -107,6 +132,11 @@ export function AddressSearch({
         if (Array.isArray(shapeData.roads) && shapeData.roads.length > 0) {
           onRoadsChange(shapeData.roads);
         }
+      }
+
+      if (!siteDetected) {
+        setParcelMode(true);
+        setGeocodedPos({ lat, lng });
       }
 
       if (zoningRes.status !== 'fulfilled') {
@@ -272,6 +302,15 @@ export function AddressSearch({
           <XCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-red-400" />
           <p className="text-[11px] text-red-300">{searchStatus.message}</p>
         </div>
+      )}
+
+      {parcelMode && geocodedPos && (
+        <ParcelMap
+          lat={geocodedPos.lat}
+          lng={geocodedPos.lng}
+          onParcelSelect={handleParcelSelect}
+          onCancel={() => setParcelMode(false)}
+        />
       )}
     </div>
   );
