@@ -2,41 +2,41 @@
 
 @layer base {
   :root {
-    /* App design tokens */
-    --app-bg: #0b0d10;
-    --app-bg-strong: #0a0c10;
-    --app-surface: #11151d;
-    --app-surface-strong: #171c28;
-    --app-border: rgba(255, 255, 255, 0.08);
-    --app-border-strong: rgba(255, 255, 255, 0.16);
-    --app-text: #f5f6f8;
-    --app-muted: #9aa3b2;
-    --app-muted-strong: #c1c7d4;
-    --app-accent: #5de4c7;
-    --app-accent-strong: #2ec4a6;
-    --app-warm: #f4b860;
-    --app-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    /* App design tokens — light theme */
+    --app-bg: #f8f9fb;
+    --app-bg-strong: #ffffff;
+    --app-surface: #ffffff;
+    --app-surface-strong: #f1f3f6;
+    --app-border: rgba(0, 0, 0, 0.08);
+    --app-border-strong: rgba(0, 0, 0, 0.14);
+    --app-text: #1a1d23;
+    --app-muted: #6b7280;
+    --app-muted-strong: #4b5563;
+    --app-accent: #0d9488;
+    --app-accent-strong: #0f766e;
+    --app-warm: #d97706;
+    --app-shadow: 0 24px 60px rgba(0, 0, 0, 0.08);
 
-    /* shadcn/ui CSS variables - mapped to app design tokens */
-    --background: 220 25% 4%;
-    --foreground: 220 20% 96%;
-    --card: 220 25% 8%;
-    --card-foreground: 220 20% 96%;
-    --popover: 220 25% 8%;
-    --popover-foreground: 220 20% 96%;
-    --primary: 166 68% 63%;
-    --primary-foreground: 220 25% 4%;
-    --secondary: 220 20% 14%;
-    --secondary-foreground: 220 20% 96%;
-    --muted: 220 20% 14%;
-    --muted-foreground: 216 14% 65%;
-    --accent: 220 20% 14%;
-    --accent-foreground: 220 20% 96%;
+    /* shadcn/ui CSS variables — light theme */
+    --background: 220 20% 98%;
+    --foreground: 220 20% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+    --primary: 166 68% 33%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 220 20% 10%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 216 14% 45%;
+    --accent: 220 14% 94%;
+    --accent-foreground: 220 20% 10%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 10% 16%;
-    --input: 220 10% 16%;
-    --ring: 166 68% 63%;
+    --border: 220 10% 88%;
+    --input: 220 10% 88%;
+    --ring: 166 68% 33%;
     --radius: 0.625rem;
   }
 }
@@ -70,10 +70,7 @@
 }
 
 body {
-  background:
-    radial-gradient(1200px 680px at 85% -10%, rgba(93, 228, 199, 0.14), transparent 60%),
-    radial-gradient(900px 520px at 5% 15%, rgba(244, 184, 96, 0.10), transparent 55%),
-    var(--app-bg);
+  background: var(--app-bg);
   color: var(--app-text);
   font-family: var(--font-body), "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
   letter-spacing: 0.01em;
@@ -89,7 +86,7 @@ h1, h2, h3 {
 }
 
 .app-panel {
-  background: linear-gradient(180deg, rgba(17, 21, 29, 0.92), rgba(12, 15, 22, 0.92));
+  background: rgba(255, 255, 255, 0.92);
   border: 1px solid var(--app-border);
   border-radius: 18px;
   box-shadow: var(--app-shadow);

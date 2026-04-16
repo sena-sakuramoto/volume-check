@@ -25,24 +25,20 @@ interface SetbackLinesProps {
   };
 }
 
-const SAMPLE_COUNT = 5;
 const ABSOLUTE_MAX = 60;
 
-/** Sample evenly spaced points along an edge, inset 10% from ends */
-function sampleEdge(
-  sx: number,
-  sy: number,
-  ex: number,
-  ey: number,
-  count: number,
-): Array<{ x: number; y: number }> {
-  const pts: Array<{ x: number; y: number }> = [];
-  for (let i = 0; i <= count; i++) {
-    const t = 0.1 + (i / Math.max(count, 1)) * 0.8;
-    pts.push({ x: sx + (ex - sx) * t, y: sy + (ey - sy) * t });
-  }
-  return pts;
-}
+type Vec3 = [number, number, number];
+
+type RenderedSlope = {
+  key: string;
+  surfaceGeometry: THREE.BufferGeometry;
+  sectionGeometry: THREE.BufferGeometry;
+  labelPosition: Vec3;
+  labelText: string;
+  surfaceColor: string;
+  surfaceOpacity: number;
+  labelBackground: string;
+};
 
 /** Signed area: positive = CCW */
 function signedArea(verts: Array<{ x: number; y: number }>): number {
@@ -53,6 +49,40 @@ function signedArea(verts: Array<{ x: number; y: number }>): number {
     a += verts[i].x * verts[j].y - verts[j].x * verts[i].y;
   }
   return a / 2;
+}
+
+function createIndexedGeometry(vertices: number[], indices: number[]): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+  const vertexCount = vertices.length / 3;
+  const indexArray =
+    vertexCount > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
+  geometry.setIndex(new THREE.BufferAttribute(indexArray, 1));
+  return geometry;
+}
+
+function createQuadGeometry(v0: Vec3, v1: Vec3, v2: Vec3, v3: Vec3): THREE.BufferGeometry {
+  return createIndexedGeometry(
+    [...v0, ...v1, ...v2, ...v3],
+    [0, 1, 2, 0, 2, 3],
+  );
+}
+
+function createLineGeometry(start: Vec3, end: Vec3): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    'position',
+    new THREE.BufferAttribute(new Float32Array([...start, ...end]), 3),
+  );
+  return geometry;
+}
+
+function getSurfaceMidpoint(v0: Vec3, v1: Vec3, v2: Vec3, v3: Vec3): Vec3 {
+  return [
+    (v0[0] + v1[0] + v2[0] + v3[0]) / 4,
+    (v0[1] + v1[1] + v2[1] + v3[1]) / 4,
+    (v0[2] + v1[2] + v2[2] + v3[2]) / 4,
+  ];
 }
 
 export function SetbackLines({ site, roads, zoning, layers }: SetbackLinesProps) {
@@ -72,47 +102,52 @@ export function SetbackLines({ site, roads, zoning, layers }: SetbackLinesProps)
   const absLimit = zoning.absoluteHeightLimit ?? ABSOLUTE_MAX;
   const isCCW = useMemo(() => signedArea(site.vertices) > 0, [site.vertices]);
 
-  // ── Road setback slope lines (道路斜線) ──
+  // ── Road setback slope surfaces (道路斜線) ──
   const roadSlopeData = useMemo(() => {
-    if (!layers.road || roads.length === 0) return null;
+    if (!layers.road || roads.length === 0 || roadParams.slopeRatio <= 0) return [];
 
-    const points: THREE.Vector3[] = [];
+    const maxH = Math.min(absLimit + 2, ABSOLUTE_MAX);
+    const maxDist = maxH / roadParams.slopeRatio;
 
-    for (const road of roads) {
+    return roads.map((road, index) => {
       const bearingRad = (road.bearing * Math.PI) / 180;
-      // Direction FROM road INTO site (opposite of bearing)
       const inX = -Math.sin(bearingRad);
       const inY = -Math.cos(bearingRad);
 
-      const samples = sampleEdge(
-        road.edgeStart.x,
-        road.edgeStart.y,
-        road.edgeEnd.x,
-        road.edgeEnd.y,
-        SAMPLE_COUNT,
-      );
+      const v0: Vec3 = [
+        road.edgeStart.x - inX * road.width,
+        0,
+        road.edgeStart.y - inY * road.width,
+      ];
+      const v1: Vec3 = [
+        road.edgeEnd.x - inX * road.width,
+        0,
+        road.edgeEnd.y - inY * road.width,
+      ];
+      const v2: Vec3 = [v1[0] + inX * maxDist, maxH, v1[2] + inY * maxDist];
+      const v3: Vec3 = [v0[0] + inX * maxDist, maxH, v0[2] + inY * maxDist];
 
-      for (const pt of samples) {
-        // Road opposite boundary (far side of road)
-        const oppX = pt.x - inX * road.width;
-        const oppY = pt.y - inY * road.width;
+      const midBottomX = (v0[0] + v1[0]) / 2;
+      const midBottomZ = (v0[2] + v1[2]) / 2;
+      const sectionStart: Vec3 = [midBottomX, 0, midBottomZ];
+      const sectionEnd: Vec3 = [
+        midBottomX + inX * maxDist,
+        maxH,
+        midBottomZ + inY * maxDist,
+      ];
 
-        // Start: road opposite boundary at ground
-        // Three.js: (X=engineX, Y=height, Z=engineY)
-        points.push(new THREE.Vector3(oppX, 0, oppY));
-
-        // End: extend into site until hitting absLimit or 25m horizontal
-        const maxH = Math.min(absLimit + 2, ABSOLUTE_MAX);
-        const maxDist = maxH / roadParams.slopeRatio;
-        const endX = oppX + inX * maxDist;
-        const endY = oppY + inY * maxDist;
-        const endH = roadParams.slopeRatio * maxDist;
-        points.push(new THREE.Vector3(endX, endH, endY));
-      }
-    }
-
-    return new THREE.BufferGeometry().setFromPoints(points);
-  }, [roads, roadParams, absLimit, layers.road]);
+      return {
+        key: `road-${index}`,
+        surfaceGeometry: createQuadGeometry(v0, v1, v2, v3),
+        sectionGeometry: createLineGeometry(sectionStart, sectionEnd),
+        labelPosition: getSurfaceMidpoint(v0, v1, v2, v3),
+        labelText: `道路斜線 ${roadParams.slopeRatio}D`,
+        surfaceColor: '#f59e0b',
+        surfaceOpacity: 0.15,
+        labelBackground: 'rgba(245, 158, 11, 0.85)',
+      } satisfies RenderedSlope;
+    });
+  }, [roads, roadParams.slopeRatio, absLimit, layers.road]);
 
   // ── Identify non-road edges → north vs adjacent (using engine functions) ──
   const { northEdgesList, adjacentEdgesList } = useMemo(() => {
@@ -148,73 +183,94 @@ export function SetbackLines({ site, roads, zoning, layers }: SetbackLinesProps)
     };
   }, [site.vertices, roads, isCCW]);
 
-  // ── North setback slope lines (北側斜線) ──
+  // ── North setback slope surfaces (北側斜線) ──
   const northSlopeData = useMemo(() => {
-    if (!layers.north || !northParams || northEdgesList.length === 0) return null;
-
-    const points: THREE.Vector3[] = [];
-
-    for (const edge of northEdgesList) {
-      const samples = sampleEdge(edge.sx, edge.sy, edge.ex, edge.ey, SAMPLE_COUNT);
-
-      for (const pt of samples) {
-        // Start at north edge at riseHeight
-        points.push(new THREE.Vector3(pt.x, northParams.riseHeight, pt.y));
-
-        // Extend inward until hitting absLimit
-        const remainH = absLimit - northParams.riseHeight;
-        if (remainH <= 0) continue;
-        const maxDist = remainH / northParams.slopeRatio;
-        const endH = northParams.riseHeight + northParams.slopeRatio * maxDist;
-        points.push(
-          new THREE.Vector3(
-            pt.x + edge.inX * maxDist,
-            endH,
-            pt.y + edge.inY * maxDist,
-          ),
-        );
-      }
+    if (
+      !layers.north ||
+      !northParams ||
+      northEdgesList.length === 0 ||
+      northParams.slopeRatio <= 0
+    ) {
+      return [];
     }
 
-    if (points.length === 0) return null;
-    return new THREE.BufferGeometry().setFromPoints(points);
+    const remainH = absLimit - northParams.riseHeight;
+    if (remainH <= 0) return [];
+
+    const maxDist = remainH / northParams.slopeRatio;
+    const maxH = northParams.riseHeight + northParams.slopeRatio * maxDist;
+
+    return northEdgesList.map((edge, index) => {
+      const v0: Vec3 = [edge.sx, northParams.riseHeight, edge.sy];
+      const v1: Vec3 = [edge.ex, northParams.riseHeight, edge.ey];
+      const v2: Vec3 = [edge.ex + edge.inX * maxDist, maxH, edge.ey + edge.inY * maxDist];
+      const v3: Vec3 = [edge.sx + edge.inX * maxDist, maxH, edge.sy + edge.inY * maxDist];
+
+      const midEdgeX = (edge.sx + edge.ex) / 2;
+      const midEdgeY = (edge.sy + edge.ey) / 2;
+      const sectionStart: Vec3 = [midEdgeX, northParams.riseHeight, midEdgeY];
+      const sectionEnd: Vec3 = [
+        midEdgeX + edge.inX * maxDist,
+        maxH,
+        midEdgeY + edge.inY * maxDist,
+      ];
+
+      return {
+        key: `north-${index}`,
+        surfaceGeometry: createQuadGeometry(v0, v1, v2, v3),
+        sectionGeometry: createLineGeometry(sectionStart, sectionEnd),
+        labelPosition: getSurfaceMidpoint(v0, v1, v2, v3),
+        labelText: `北側斜線 ${northParams.riseHeight}m+${northParams.slopeRatio}D`,
+        surfaceColor: '#8b5cf6',
+        surfaceOpacity: 0.12,
+        labelBackground: 'rgba(139, 92, 246, 0.85)',
+      } satisfies RenderedSlope;
+    });
   }, [northEdgesList, northParams, absLimit, layers.north]);
 
-  // ── Adjacent setback slope lines (隣地斜線) ──
+  // ── Adjacent setback slope surfaces (隣地斜線) ──
   const adjSlopeData = useMemo(() => {
-    if (!layers.adjacent || adjacentEdgesList.length === 0) return null;
-    // Don't draw if riseHeight already exceeds absLimit (not constraining)
-    if (adjParams.riseHeight >= absLimit) return null;
-
-    const points: THREE.Vector3[] = [];
-
-    for (const edge of adjacentEdgesList) {
-      const samples = sampleEdge(
-        edge.sx,
-        edge.sy,
-        edge.ex,
-        edge.ey,
-        Math.min(SAMPLE_COUNT, 3),
-      );
-
-      for (const pt of samples) {
-        points.push(new THREE.Vector3(pt.x, adjParams.riseHeight, pt.y));
-        const remainH = absLimit - adjParams.riseHeight;
-        if (remainH <= 0) continue;
-        const maxDist = remainH / adjParams.slopeRatio;
-        const endH = adjParams.riseHeight + adjParams.slopeRatio * maxDist;
-        points.push(
-          new THREE.Vector3(
-            pt.x + edge.inX * maxDist,
-            endH,
-            pt.y + edge.inY * maxDist,
-          ),
-        );
-      }
+    if (
+      !layers.adjacent ||
+      adjacentEdgesList.length === 0 ||
+      adjParams.slopeRatio <= 0 ||
+      adjParams.riseHeight >= absLimit
+    ) {
+      return [];
     }
 
-    if (points.length === 0) return null;
-    return new THREE.BufferGeometry().setFromPoints(points);
+    const remainH = absLimit - adjParams.riseHeight;
+    if (remainH <= 0) return [];
+
+    const maxDist = remainH / adjParams.slopeRatio;
+    const maxH = adjParams.riseHeight + adjParams.slopeRatio * maxDist;
+
+    return adjacentEdgesList.map((edge, index) => {
+      const v0: Vec3 = [edge.sx, adjParams.riseHeight, edge.sy];
+      const v1: Vec3 = [edge.ex, adjParams.riseHeight, edge.ey];
+      const v2: Vec3 = [edge.ex + edge.inX * maxDist, maxH, edge.ey + edge.inY * maxDist];
+      const v3: Vec3 = [edge.sx + edge.inX * maxDist, maxH, edge.sy + edge.inY * maxDist];
+
+      const midEdgeX = (edge.sx + edge.ex) / 2;
+      const midEdgeY = (edge.sy + edge.ey) / 2;
+      const sectionStart: Vec3 = [midEdgeX, adjParams.riseHeight, midEdgeY];
+      const sectionEnd: Vec3 = [
+        midEdgeX + edge.inX * maxDist,
+        maxH,
+        midEdgeY + edge.inY * maxDist,
+      ];
+
+      return {
+        key: `adjacent-${index}`,
+        surfaceGeometry: createQuadGeometry(v0, v1, v2, v3),
+        sectionGeometry: createLineGeometry(sectionStart, sectionEnd),
+        labelPosition: getSurfaceMidpoint(v0, v1, v2, v3),
+        labelText: `隣地斜線 ${adjParams.riseHeight}m+${adjParams.slopeRatio}D`,
+        surfaceColor: '#10b981',
+        surfaceOpacity: 0.12,
+        labelBackground: 'rgba(16, 185, 129, 0.85)',
+      } satisfies RenderedSlope;
+    });
   }, [adjacentEdgesList, adjParams, absLimit, layers.adjacent]);
 
   // ── Absolute height limit frame (絶対高さ) ──
@@ -255,26 +311,101 @@ export function SetbackLines({ site, roads, zoning, layers }: SetbackLinesProps)
 
   return (
     <group>
-      {/* Road setback slope lines */}
-      {roadSlopeData && (
-        <lineSegments geometry={roadSlopeData}>
-          <lineBasicMaterial color="#f59e0b" linewidth={2} transparent opacity={0.9} />
-        </lineSegments>
-      )}
+      {roadSlopeData.map((slope) => (
+        <group key={slope.key}>
+          <mesh geometry={slope.surfaceGeometry}>
+            <meshBasicMaterial
+              color={slope.surfaceColor}
+              transparent
+              opacity={slope.surfaceOpacity}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+          <lineSegments geometry={slope.sectionGeometry}>
+            <lineBasicMaterial color={slope.surfaceColor} linewidth={2} transparent opacity={0.9} />
+          </lineSegments>
+          <Html position={slope.labelPosition} center style={{ pointerEvents: 'none' }}>
+            <div
+              style={{
+                background: slope.labelBackground,
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                fontSize: '11px',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {slope.labelText}
+            </div>
+          </Html>
+        </group>
+      ))}
 
-      {/* North setback slope lines */}
-      {northSlopeData && (
-        <lineSegments geometry={northSlopeData}>
-          <lineBasicMaterial color="#8b5cf6" linewidth={2} transparent opacity={0.9} />
-        </lineSegments>
-      )}
+      {northSlopeData.map((slope) => (
+        <group key={slope.key}>
+          <mesh geometry={slope.surfaceGeometry}>
+            <meshBasicMaterial
+              color={slope.surfaceColor}
+              transparent
+              opacity={slope.surfaceOpacity}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+          <lineSegments geometry={slope.sectionGeometry}>
+            <lineBasicMaterial color={slope.surfaceColor} linewidth={2} transparent opacity={0.9} />
+          </lineSegments>
+          <Html position={slope.labelPosition} center style={{ pointerEvents: 'none' }}>
+            <div
+              style={{
+                background: slope.labelBackground,
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                fontSize: '11px',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {slope.labelText}
+            </div>
+          </Html>
+        </group>
+      ))}
 
-      {/* Adjacent setback slope lines */}
-      {adjSlopeData && (
-        <lineSegments geometry={adjSlopeData}>
-          <lineBasicMaterial color="#10b981" linewidth={2} transparent opacity={0.9} />
-        </lineSegments>
-      )}
+      {adjSlopeData.map((slope) => (
+        <group key={slope.key}>
+          <mesh geometry={slope.surfaceGeometry}>
+            <meshBasicMaterial
+              color={slope.surfaceColor}
+              transparent
+              opacity={slope.surfaceOpacity}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+          <lineSegments geometry={slope.sectionGeometry}>
+            <lineBasicMaterial color={slope.surfaceColor} linewidth={2} transparent opacity={0.9} />
+          </lineSegments>
+          <Html position={slope.labelPosition} center style={{ pointerEvents: 'none' }}>
+            <div
+              style={{
+                background: slope.labelBackground,
+                color: '#fff',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                fontSize: '11px',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {slope.labelText}
+            </div>
+          </Html>
+        </group>
+      ))}
 
       {/* Absolute height frame */}
       {absHeightFrame && (
@@ -302,60 +433,6 @@ export function SetbackLines({ site, roads, zoning, layers }: SetbackLinesProps)
             }}
           >
             絶対高さ {absH}m
-          </div>
-        </Html>
-      )}
-
-      {/* North setback label */}
-      {layers.north && northParams && northEdgesList.length > 0 && (
-        <Html
-          position={[
-            (northEdgesList[0].sx + northEdgesList[0].ex) / 2,
-            northParams.riseHeight + 0.5,
-            (northEdgesList[0].sy + northEdgesList[0].ey) / 2,
-          ]}
-          center
-          style={{ pointerEvents: 'none' }}
-        >
-          <div
-            style={{
-              background: 'rgba(139, 92, 246, 0.85)',
-              color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px',
-              fontSize: '11px',
-              fontWeight: 600,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            北側斜線 {northParams.riseHeight}m+1.25D
-          </div>
-        </Html>
-      )}
-
-      {/* Road setback label */}
-      {layers.road && roads.length > 0 && (
-        <Html
-          position={[
-            (roads[0].edgeStart.x + roads[0].edgeEnd.x) / 2,
-            1,
-            (roads[0].edgeStart.y + roads[0].edgeEnd.y) / 2,
-          ]}
-          center
-          style={{ pointerEvents: 'none' }}
-        >
-          <div
-            style={{
-              background: 'rgba(245, 158, 11, 0.85)',
-              color: '#fff',
-              padding: '2px 6px',
-              borderRadius: '3px',
-              fontSize: '11px',
-              fontWeight: 600,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            道路斜線 {roadParams.slopeRatio}D
           </div>
         </Html>
       )}

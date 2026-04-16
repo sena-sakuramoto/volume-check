@@ -75,7 +75,7 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
   return (
     <Canvas
       camera={{ position: cameraPos, fov: 45, near: 0.1, far: 500 }}
-      style={{ width: '100%', height: '100%', background: '#0f1218' }}
+      style={{ width: '100%', height: '100%', background: '#f3f4f6' }}
       gl={{ antialias: true }}
     >
       <Suspense fallback={null}>
@@ -90,10 +90,10 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
           args={[100, 100]}
           cellSize={1}
           cellThickness={0.4}
-          cellColor="#22262e"
+          cellColor="#d1d5db"
           sectionSize={5}
           sectionThickness={0.8}
-          sectionColor="#333a47"
+          sectionColor="#9ca3af"
           fadeDistance={40}
           infiniteGrid
         />
@@ -107,48 +107,59 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
           />
         )}
 
-        {/* Main envelope */}
+        {/* Main envelope — dimmed when setback layers are active so binding zones show through */}
         {volumeResult && volumeResult.envelopeVertices.length > 0 && (
           <EnvelopeMesh
             vertices={volumeResult.envelopeVertices}
             indices={volumeResult.envelopeIndices}
+            dimmed={layers.road || layers.adjacent || layers.north || layers.absoluteHeight || layers.shadow}
           />
         )}
 
-        {/* Setback layers */}
-        {volumeResult && layers.road && volumeResult.setbackEnvelopes.road && (
+        {/* Binding zone layers — colored by which regulation is binding */}
+        {volumeResult && layers.road && volumeResult.bindingZoneEnvelopes?.road && (
           <SetbackLayer
-            vertices={volumeResult.setbackEnvelopes.road.vertices}
-            indices={volumeResult.setbackEnvelopes.road.indices}
+            vertices={volumeResult.bindingZoneEnvelopes.road.vertices}
+            indices={volumeResult.bindingZoneEnvelopes.road.indices}
             color={SETBACK_COLORS.road}
+            opacity={0.85}
+            renderOrder={2}
           />
         )}
-        {volumeResult && layers.adjacent && volumeResult.setbackEnvelopes.adjacent && (
+        {volumeResult && layers.adjacent && volumeResult.bindingZoneEnvelopes?.adjacent && (
           <SetbackLayer
-            vertices={volumeResult.setbackEnvelopes.adjacent.vertices}
-            indices={volumeResult.setbackEnvelopes.adjacent.indices}
+            vertices={volumeResult.bindingZoneEnvelopes.adjacent.vertices}
+            indices={volumeResult.bindingZoneEnvelopes.adjacent.indices}
             color={SETBACK_COLORS.adjacent}
+            opacity={0.85}
+            renderOrder={2}
           />
         )}
-        {volumeResult && layers.north && volumeResult.setbackEnvelopes.north && (
+        {volumeResult && layers.north && volumeResult.bindingZoneEnvelopes?.north && (
           <SetbackLayer
-            vertices={volumeResult.setbackEnvelopes.north.vertices}
-            indices={volumeResult.setbackEnvelopes.north.indices}
+            vertices={volumeResult.bindingZoneEnvelopes.north.vertices}
+            indices={volumeResult.bindingZoneEnvelopes.north.indices}
             color={SETBACK_COLORS.north}
+            opacity={0.85}
+            renderOrder={2}
           />
         )}
-        {volumeResult && layers.absoluteHeight && volumeResult.setbackEnvelopes.absoluteHeight && (
+        {volumeResult && layers.absoluteHeight && volumeResult.bindingZoneEnvelopes?.absoluteHeight && (
           <SetbackLayer
-            vertices={volumeResult.setbackEnvelopes.absoluteHeight.vertices}
-            indices={volumeResult.setbackEnvelopes.absoluteHeight.indices}
+            vertices={volumeResult.bindingZoneEnvelopes.absoluteHeight.vertices}
+            indices={volumeResult.bindingZoneEnvelopes.absoluteHeight.indices}
             color={SETBACK_COLORS.absoluteHeight}
+            opacity={0.85}
+            renderOrder={2}
           />
         )}
-        {volumeResult && layers.shadow && volumeResult.setbackEnvelopes.shadow && (
+        {volumeResult && layers.shadow && volumeResult.bindingZoneEnvelopes?.shadow && (
           <SetbackLayer
-            vertices={volumeResult.setbackEnvelopes.shadow.vertices}
-            indices={volumeResult.setbackEnvelopes.shadow.indices}
+            vertices={volumeResult.bindingZoneEnvelopes.shadow.vertices}
+            indices={volumeResult.bindingZoneEnvelopes.shadow.indices}
             color={SETBACK_COLORS.shadow}
+            opacity={0.85}
+            renderOrder={2}
           />
         )}
 

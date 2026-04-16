@@ -376,23 +376,24 @@ function ReverseShadowLegend({ contourLines, minH, maxH }: { contourLines: Conto
     >
       <div
         style={{
-          background: 'rgba(15, 23, 42, 0.92)',
+          background: 'rgba(255, 255, 255, 0.95)',
           borderRadius: '8px',
           padding: '10px 12px',
           display: 'flex',
           flexDirection: 'column',
           gap: '4px',
           fontSize: '12px',
-          color: '#e2e8f0',
+          color: '#1a1d23',
           fontFamily: 'system-ui, sans-serif',
           lineHeight: 1.3,
           pointerEvents: 'none',
           userSelect: 'none',
-          border: '1px solid rgba(255,255,255,0.15)',
+          border: '1px solid rgba(0,0,0,0.1)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
         }}
       >
         <div style={{ fontWeight: 700, marginBottom: '2px', fontSize: '13px' }}>逆日影 (日影高さ制限面)</div>
-        <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px' }}>
+        <div style={{ fontSize: '10px', color: '#6b7280', marginBottom: '4px' }}>
           日影による最大高さ: {minH.toFixed(1)}m 〜 {maxH.toFixed(1)}m
         </div>
         {contourLines.map((cl, i) => (
@@ -408,7 +409,7 @@ function ReverseShadowLegend({ contourLines, minH, maxH }: { contourLines: Conto
               }}
             />
             <span style={{ fontWeight: 600 }}>{cl.height}m</span>
-            <span style={{ fontSize: '10px', color: '#94a3b8' }}>({cl.segments.length}線分)</span>
+            <span style={{ fontSize: '10px', color: '#6b7280' }}>({cl.segments.length}線分)</span>
           </div>
         ))}
       </div>

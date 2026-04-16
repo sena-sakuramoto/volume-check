@@ -7,6 +7,8 @@ interface SetbackLayerProps {
   vertices: Float32Array;
   indices: Uint32Array;
   color: string;
+  opacity?: number;
+  renderOrder?: number;
 }
 
 function createGeometry(vertices: Float32Array, indices: Uint32Array): THREE.BufferGeometry {
@@ -17,18 +19,21 @@ function createGeometry(vertices: Float32Array, indices: Uint32Array): THREE.Buf
   return geometry;
 }
 
-export function SetbackLayer({ vertices, indices, color }: SetbackLayerProps) {
+export function SetbackLayer({ vertices, indices, color, opacity = 0.35, renderOrder = 0 }: SetbackLayerProps) {
   const geometry = useMemo(() => createGeometry(vertices, indices), [vertices, indices]);
 
   return (
-    <mesh geometry={geometry}>
+    <mesh geometry={geometry} renderOrder={renderOrder}>
       <meshStandardMaterial
         color={color}
         roughness={0.8}
         transparent
-        opacity={0.35}
+        opacity={opacity}
         side={THREE.DoubleSide}
         depthWrite={false}
+        polygonOffset
+        polygonOffsetFactor={-renderOrder}
+        polygonOffsetUnits={-renderOrder}
       />
     </mesh>
   );

@@ -231,14 +231,16 @@ function ShadowLegend() {
     >
       <div
         style={{
-          background: 'rgba(15, 23, 42, 0.85)',
+          background: 'rgba(255, 255, 255, 0.95)',
           borderRadius: '6px',
           padding: '8px 10px',
           display: 'flex',
           flexDirection: 'column',
           gap: '3px',
           fontSize: '11px',
-          color: '#e2e8f0',
+          color: '#1a1d23',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+          border: '1px solid rgba(0,0,0,0.1)',
           fontFamily: 'system-ui, sans-serif',
           lineHeight: 1.3,
           pointerEvents: 'none',

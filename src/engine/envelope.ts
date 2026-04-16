@@ -51,6 +51,25 @@ function signedArea(vertices: Point2D[]): number {
   return area / 2;
 }
 
+function computeAchievableFloorArea(field: HeightField, floorHeight: number): number {
+  const cellArea = GRID_RESOLUTION * GRID_RESOLUTION;
+  let totalArea = 0;
+  let floor = 1;
+  while (true) {
+    const floorZ = floor * floorHeight;
+    let floorArea = 0;
+    for (let i = 0; i < field.heights.length; i++) {
+      if (field.insideMask[i] === 1 && field.heights[i] >= floorZ) {
+        floorArea += cellArea;
+      }
+    }
+    if (floorArea === 0) break;
+    totalArea += floorArea;
+    floor++;
+  }
+  return totalArea;
+}
+
 function outwardNormalAngle(a: Point2D, b: Point2D, isCCW: boolean): number {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -443,6 +462,44 @@ function buildSetbackHeightField(
 }
 
 /**
+ * Build a binding zone height field for a specific restriction.
+ * Returns the combined envelope height ONLY at points where this restriction
+ * is the most restrictive (i.e., its height ≈ combined height).
+ * All other points are set to 0.
+ */
+function buildBindingZoneField(
+  combinedField: HeightField,
+  evaluator: (point: Point2D) => number,
+  tolerance: number = 0.15,
+): HeightField {
+  const { cols, rows, originX, originY, insideMask } = combinedField;
+  const heights = new Float32Array(rows * cols);
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const idx = row * cols + col;
+      if (insideMask[idx] === 0) continue;
+
+      const point: Point2D = {
+        x: originX + col * GRID_RESOLUTION,
+        y: originY + row * GRID_RESOLUTION,
+      };
+
+      const thisH = evaluator(point);
+      const combinedH = combinedField.heights[idx];
+
+      // This restriction is binding when its limit is at or below the combined limit
+      if (thisH <= combinedH + tolerance) {
+        heights[idx] = combinedH;
+      }
+      // else: another restriction is more restrictive here -> height stays 0
+    }
+  }
+
+  return { cols, rows, heights, originX, originY, insideMask };
+}
+
+/**
  * Convert a height field into a triangle mesh.
  * For each grid cell with at least one inside vertex, create:
  *  - 2 triangles for the top surface
@@ -665,12 +722,12 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
 
   const { site, zoning, roads } = input;
 
-  // 1. Calculate coverage and floor area limits
-  const maxCoverageArea = calculateMaxCoverage(site, zoning);
-  const maxFloorArea = calculateMaxFloorArea(site, zoning, roads);
-
-  // 2. Apply wall setback to get buildable footprint
+  // 1. Apply wall setback to get buildable footprint
   const buildablePolygon = applyWallSetback(site.vertices, zoning.wallSetback);
+  const buildablePolygonArea = Math.abs(signedArea(buildablePolygon));
+
+  // 2. Calculate coverage limit
+  const maxCoverageArea = calculateMaxCoverage(site, zoning, buildablePolygonArea);
 
   // 3. Classify edges
   const siteEdges = getSiteEdges(site.vertices);
@@ -702,6 +759,9 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     northRotation,
     true,
   );
+  const achievableFloorArea = computeAchievableFloorArea(combinedField, FLOOR_HEIGHT);
+  const farBasedLimit = calculateMaxFloorArea(site, zoning, roads);
+  const maxFloorArea = Math.round(Math.min(farBasedLimit, achievableFloorArea) * 100) / 100;
 
   // Optional: a non-shadow envelope field for building pattern caps
   let nonShadowField: HeightField | null = null;
@@ -854,6 +914,79 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
     shadowEnvelope = heightFieldToMesh(shadowField);
   }
 
+  // Binding zone envelopes (which restriction is binding at each point)
+  let roadBindingEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (roads.length > 0) {
+    const field = buildBindingZoneField(
+      combinedField,
+      (point) => {
+        let h = Infinity;
+        for (const road of roads) {
+          const rh = calculateRoadSetbackHeight(point, road, roadParams.slopeRatio, roadParams.applicationDistance);
+          if (rh < h) h = rh;
+        }
+        return h;
+      },
+    );
+    roadBindingEnvelope = heightFieldToMesh(field);
+  }
+
+  let adjacentBindingEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (adjacentOnlyEdges.length > 0) {
+    const field = buildBindingZoneField(
+      combinedField,
+      (point) => {
+        let h = Infinity;
+        for (const edge of adjacentOnlyEdges) {
+          const ah = calculateAdjacentSetbackHeight(point, edge.start, edge.end, adjParams.riseHeight, adjParams.slopeRatio);
+          if (ah < h) h = ah;
+        }
+        return h;
+      },
+    );
+    adjacentBindingEnvelope = heightFieldToMesh(field);
+  }
+
+  let northBindingEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (northParams !== null && northEdges.length > 0) {
+    const field = buildBindingZoneField(
+      combinedField,
+      (point) => {
+        let h = Infinity;
+        for (const edge of northEdges) {
+          const nh = calculateNorthSetbackHeight(point, edge.start, edge.end, northParams.riseHeight, northParams.slopeRatio);
+          if (nh < h) h = nh;
+        }
+        return h;
+      },
+    );
+    northBindingEnvelope = heightFieldToMesh(field);
+  }
+
+  let absoluteHeightBindingEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (zoning.absoluteHeightLimit !== null) {
+    const field = buildBindingZoneField(
+      combinedField,
+      () => zoning.absoluteHeightLimit!,
+    );
+    absoluteHeightBindingEnvelope = heightFieldToMesh(field);
+  }
+
+  let shadowBindingEnvelope: { vertices: Float32Array; indices: Uint32Array } | null = null;
+  if (zoning.shadowRegulation !== null) {
+    const field = buildBindingZoneField(
+      combinedField,
+      (point) => calculateShadowConstrainedHeight(
+        point,
+        site.vertices,
+        zoning.shadowRegulation!,
+        input.latitude,
+        northRotation,
+      ),
+    );
+    shadowBindingEnvelope = heightFieldToMesh(field);
+  }
+
   // Shadow projection analysis (ground plane visualization)
   let shadowProjection: ShadowProjectionResult | null = null;
   if (zoning.shadowRegulation !== null) {
@@ -921,6 +1054,13 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
       north: northEnvelope,
       absoluteHeight: absoluteHeightEnvelope,
       shadow: shadowEnvelope,
+    },
+    bindingZoneEnvelopes: {
+      road: roadBindingEnvelope,
+      adjacent: adjacentBindingEnvelope,
+      north: northBindingEnvelope,
+      absoluteHeight: absoluteHeightBindingEnvelope,
+      shadow: shadowBindingEnvelope,
     },
     shadowProjection,
     reverseShadow,

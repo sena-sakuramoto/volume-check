@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "test": "jest"
@@ -27,11 +27,16 @@
     "@react-three/fiber": "^9.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "face-api.js": "^0.22.2",
+    "gsap": "^3.15.0",
     "lucide-react": "^0.575.0",
     "maplibre-gl": "^5.19.0",
+    "motion": "^12.38.0",
     "next": "16.1.6",
+    "ogl": "^1.0.11",
     "pbf": "^4.0.1",
     "pmtiles": "^4.4.0",
+    "postprocessing": "^6.39.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "tailwind-merge": "^3.5.0",
@@ -58,5 +63,6 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^5"
-  }
+  },
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
 }

@@ -2,7 +2,12 @@
 
 import { useState } from 'react';
 import type { ZoningData, VolumeResult, SiteBoundary, Road } from '@/engine/types';
-import { getRoadSetbackParams, getAdjacentSetbackParams, getNorthSetbackParams } from '@/engine';
+import {
+  getRoadSetbackParams,
+  getAdjacentSetbackParams,
+  getNorthSetbackParams,
+  getHeightDistrictParams,
+} from '@/engine';
 import { MAX_HEIGHT_CAP } from '@/engine/constants';
 import { HeroMetrics } from '@/components/results/HeroMetrics';
 import { PatternComparison } from '@/components/results/PatternComparison';
@@ -90,8 +95,25 @@ export function ResultsSection({
           <DataRow label="容積率" value={`${(zoning.floorAreaRatio * 100).toFixed(0)}%`} />
           <DataRow label="防火地域" value={zoning.fireDistrict} />
           <DataRow label="高度地区" value={zoning.heightDistrict?.type ?? '指定なし'} />
-          <DataRow label="絶対高さ制限" value={zoning.absoluteHeightLimit !== null ? `${zoning.absoluteHeightLimit}m` : 'なし'} />
+          <DataRow
+            label="絶対高さ制限"
+            value={(() => {
+              if (zoning.absoluteHeightLimit !== null) return `${zoning.absoluteHeightLimit}m`;
+              const hdType = zoning.heightDistrict?.type;
+              if (hdType && hdType !== '指定なし') {
+                const hdParams = getHeightDistrictParams(hdType);
+                if (hdParams) return `${hdParams.absoluteMax}m (高度地区)`;
+              }
+              return 'なし';
+            })()}
+          />
           <DataRow label="外壁後退" value={zoning.wallSetback !== null ? `${zoning.wallSetback}m` : 'なし'} />
+          {zoning.shadowRegulation && (
+            <DataRow
+              label="日影規制"
+              value={`測定高${zoning.shadowRegulation.measurementHeight}m / 5m:${zoning.shadowRegulation.maxHoursAt5m}h・10m:${zoning.shadowRegulation.maxHoursAt10m}h`}
+            />
+          )}
           {zoning.isCornerLot && <DataRow label="角地緩和" value="適用 (+10%)" />}
         </div>
       </div>
@@ -108,6 +130,18 @@ export function ResultsSection({
           {northParams && (
             <DataRow label="北側斜線" value={`${northParams.riseHeight}m + ${northParams.slopeRatio}D`} />
           )}
+          {(() => {
+            const hdType = zoning.heightDistrict?.type;
+            if (!hdType || hdType === '指定なし') return null;
+            const hdParams = getHeightDistrictParams(hdType);
+            if (!hdParams) return null;
+            return (
+              <>
+                <DataRow label="高度地区斜線" value={`${hdParams.maxAtBoundary}m + ${hdParams.slope}勾配`} />
+                <DataRow label="高度地区上限" value={`${hdParams.absoluteMax}m`} />
+              </>
+            );
+          })()}
           {roads.length > 0 && (
             <DataRow
               label="道路幅員制限容積率"

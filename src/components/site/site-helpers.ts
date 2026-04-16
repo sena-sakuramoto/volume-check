@@ -305,8 +305,8 @@ function outwardBearing(a: Point2D, b: Point2D, isCCW: boolean): number {
   const dy = b.y - a.y;
   if (dx === 0 && dy === 0) return 0;
 
-  const nx = isCCW ? -dy : dy;
-  const ny = isCCW ? dx : -dx;
+  const nx = isCCW ? dy : -dy;
+  const ny = isCCW ? -dx : dx;
   const bearing = (Math.atan2(nx, ny) * 180) / Math.PI;
   return ((bearing % 360) + 360) % 360;
 }

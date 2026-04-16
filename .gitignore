@@ -40,5 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local parallel worktrees
-.claude/worktrees/
+# claude code
+.claude/
+.letta/

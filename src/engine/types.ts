@@ -170,6 +170,14 @@ export interface VolumeResult {
     absoluteHeight: { vertices: Float32Array; indices: Uint32Array } | null;
     shadow: { vertices: Float32Array; indices: Uint32Array } | null;
   };
+  /** Binding zone envelopes — shows only where this restriction is the most restrictive */
+  bindingZoneEnvelopes: {
+    road: { vertices: Float32Array; indices: Uint32Array } | null;
+    adjacent: { vertices: Float32Array; indices: Uint32Array } | null;
+    north: { vertices: Float32Array; indices: Uint32Array } | null;
+    absoluteHeight: { vertices: Float32Array; indices: Uint32Array } | null;
+    shadow: { vertices: Float32Array; indices: Uint32Array } | null;
+  };
   /** Shadow projection data for ground plane visualization (日影投影) */
   shadowProjection: ShadowProjectionResult | null;
   /** Height field data for time-specific shadow computation */

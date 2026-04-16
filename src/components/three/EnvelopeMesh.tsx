@@ -6,6 +6,7 @@ import * as THREE from 'three';
 interface EnvelopeMeshProps {
   vertices: Float32Array;
   indices: Uint32Array;
+  dimmed?: boolean;
 }
 
 function createGeometry(vertices: Float32Array, indices: Uint32Array): THREE.BufferGeometry {
@@ -16,19 +17,20 @@ function createGeometry(vertices: Float32Array, indices: Uint32Array): THREE.Buf
   return geometry;
 }
 
-export function EnvelopeMesh({ vertices, indices }: EnvelopeMeshProps) {
+export function EnvelopeMesh({ vertices, indices, dimmed = false }: EnvelopeMeshProps) {
   const geometry = useMemo(() => createGeometry(vertices, indices), [vertices, indices]);
 
   return (
     <mesh geometry={geometry}>
       <meshStandardMaterial
-        color="#e8eaed"
+        color={dimmed ? '#94a3b8' : '#e8eaed'}
         roughness={0.6}
         metalness={0.05}
         transparent
-        opacity={0.92}
+        opacity={dimmed ? 0.15 : 0.92}
         side={THREE.DoubleSide}
         envMapIntensity={0.8}
+        depthWrite={!dimmed}
       />
     </mesh>
   );

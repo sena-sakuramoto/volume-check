@@ -21,6 +21,11 @@ export function FloorSlices({ site, zoning, floorHeights, maxHeight }: FloorSlic
     return applyWallSetback(site.vertices, wallSetback);
   }, [site.vertices, wallSetback]);
 
+  const rightmostVertex = useMemo(() => {
+    if (insetVertices.length === 0) return { x: 0, y: 0 };
+    return insetVertices.reduce((best, v) => v.x > best.x ? v : best, insetVertices[0]);
+  }, [insetVertices]);
+
   const floorElevations = useMemo(() => {
     const elevations: number[] = [];
     let h = 0;
@@ -52,7 +57,7 @@ export function FloorSlices({ site, zoning, floorHeights, maxHeight }: FloorSlic
           <mesh geometry={plateGeometry} position={[0, elev, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <meshBasicMaterial color="#5de4c7" transparent opacity={0.1} side={THREE.DoubleSide} depthWrite={false} />
           </mesh>
-          <Html position={[insetVertices[0].x, elev + 0.1, insetVertices[0].y]} style={{ pointerEvents: 'none' }}>
+          <Html position={[rightmostVertex.x + 0.5, elev + 0.1, rightmostVertex.y]} style={{ pointerEvents: 'none' }}>
             <div style={{
               background: 'rgba(93, 228, 199, 0.75)', color: '#fff',
               padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap',

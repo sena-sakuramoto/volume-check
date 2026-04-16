@@ -19,7 +19,7 @@ import { MobileStepper } from '@/components/mobile/MobileStepper';
 import { PrintReport } from '@/components/ui/PrintReport';
 import { Slider } from '@/components/ui/shadcn/slider';
 import type { RoadConfig } from '@/components/site/site-types';
-import { buildZoningData } from '@/components/site/site-helpers';
+import { buildRectSite, buildRoadFromEdge, buildZoningData } from '@/components/site/site-helpers';
 
 const Viewer = dynamic(
   () => import('@/components/three/Viewer').then((m) => ({ default: m.Viewer })),
@@ -32,6 +32,20 @@ const Viewer = dynamic(
     ),
   },
 );
+
+const DEMO_DISTRICT: ZoningDistrict = '第二種住居地域';
+const DEMO_LATITUDE = 35.68;
+const DEMO_SITE = buildRectSite(20, 21);
+const DEMO_ROADS: Road[] = [
+  buildRoadFromEdge(DEMO_SITE.vertices, 6, [0, 1], 'south'),
+];
+const DEMO_ZONING = buildZoningData(DEMO_DISTRICT, {
+  coverageRatio: 0.6,
+  floorAreaRatio: 2.0,
+  fireDistrict: '準防火地域',
+  heightDistrict: { type: '第三種' },
+  isCornerLot: false,
+});
 
 export default function ProjectPage() {
   // Core state — start empty to match SSR, restore from localStorage in useEffect
@@ -51,6 +65,9 @@ export default function ProjectPage() {
     if (saved.zoning) setZoning(saved.zoning);
     if (saved.latitude != null) setLatitude(saved.latitude);
     if (saved.floorHeights) setFloorHeights(saved.floorHeights);
+    // Auto-advance step based on saved data
+    if (saved.zoning && saved.site) setActiveStep(3);
+    else if (saved.site && saved.roads && saved.roads.length > 0) setActiveStep(2);
   }, []);
 
   // UI state
@@ -82,18 +99,28 @@ export default function ProjectPage() {
   });
   useAutoSave({ site, roads, zoning, latitude, floorHeights });
 
-  // Auto-advance only on initial load (when saved project is restored)
-  const [hasNavigated, setHasNavigated] = useState(false);
-  const resolvedActiveStep = useMemo<Step>(() => {
-    if (hasNavigated) return activeStep;
-    if (activeStep < 2 && site && roads.length > 0) return 2;
-    if (activeStep < 3 && zoning && volumeResult) return 3;
-    return activeStep;
-  }, [activeStep, site, roads, zoning, volumeResult, hasNavigated]);
+  const resolvedActiveStep = activeStep;
 
   const handleStepChange = useCallback((step: Step) => {
-    setHasNavigated(true);
     setActiveStep(step);
+  }, []);
+
+  const loadDemoData = useCallback(() => {
+    setSite(DEMO_SITE);
+    setRoads(DEMO_ROADS);
+    setZoning(DEMO_ZONING);
+    setLatitude(DEMO_LATITUDE);
+    setFloorHeights([]);
+    setSelectedDistrict(DEMO_DISTRICT);
+    setCoverageOverride('60');
+    setFarOverride('200');
+    setFireDistrict('準防火地域');
+    setHeightDistrictType('第三種');
+    setIsCornerLot(false);
+    setRoadConfigs([
+      { id: '1', width: 6, direction: 'south', customWidth: '' },
+    ]);
+    setActiveStep(3);
   }, []);
 
   // Consolidated zoning rebuild helper
@@ -139,6 +166,16 @@ export default function ProjectPage() {
   const handleCornerLotChange = useCallback((v: boolean) => {
     setIsCornerLot(v); rebuildZoning({ corner: v });
   }, [rebuildZoning]);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('demo') === '1') {
+      loadDemoData();
+      // Clean URL so refresh doesn't re-trigger demo
+      window.history.replaceState(null, '', '/project');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const completedSteps = useMemo(() => ({
     1: !!site && roads.length > 0,
@@ -217,9 +254,18 @@ export default function ProjectPage() {
             </p>
           </div>
         </div>
-        <span className="rounded-full border border-border bg-card/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-          beta
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={loadDemoData}
+            className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/15"
+          >
+            デモを試す
+          </button>
+          <span className="rounded-full border border-border bg-card/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            beta
+          </span>
+        </div>
       </header>
 
       {/* ============ DESKTOP LAYOUT (md+) ============ */}
