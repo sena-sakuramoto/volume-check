@@ -24,8 +24,15 @@ export function SitePlane({ site, roads, buildablePolygon }: SitePlaneProps) {
 
   const outlineGeometry = useMemo(() => {
     if (site.vertices.length < 3) return null;
-    const points = site.vertices.map((v) => new THREE.Vector3(v.x, 0.02, v.y));
-    points.push(new THREE.Vector3(site.vertices[0].x, 0.02, site.vertices[0].y));
+    const points = site.vertices.map((v) => new THREE.Vector3(v.x, 0.05, v.y));
+    points.push(new THREE.Vector3(site.vertices[0].x, 0.05, site.vertices[0].y));
+    return new THREE.BufferGeometry().setFromPoints(points);
+  }, [site.vertices]);
+
+  const glowOutlineGeometry = useMemo(() => {
+    if (site.vertices.length < 3) return null;
+    const points = site.vertices.map((v) => new THREE.Vector3(v.x, 0.04, v.y));
+    points.push(new THREE.Vector3(site.vertices[0].x, 0.04, site.vertices[0].y));
     return new THREE.BufferGeometry().setFromPoints(points);
   }, [site.vertices]);
 
@@ -70,12 +77,24 @@ export function SitePlane({ site, roads, buildablePolygon }: SitePlaneProps) {
           />
         </mesh>
       )}
+      {glowOutlineGeometry && (
+        <line>
+          <bufferGeometry attach="geometry" {...glowOutlineGeometry} />
+          <lineBasicMaterial color="#10b981" linewidth={3} transparent opacity={0.5} />
+        </line>
+      )}
       {outlineGeometry && (
         <line>
           <bufferGeometry attach="geometry" {...outlineGeometry} />
-          <lineBasicMaterial color="#3dd4aa" linewidth={2} />
+          <lineBasicMaterial color="#ffffff" linewidth={2} />
         </line>
       )}
+      {site.vertices.map((v, i) => (
+        <mesh key={`corner-${i}`} position={[v.x, 0.06, v.y]}>
+          <sphereGeometry args={[0.15, 8, 8]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+      ))}
       {buildableOutline && (
         <line>
           <bufferGeometry attach="geometry" {...buildableOutline} />
