@@ -1022,7 +1022,7 @@ export function generateEnvelope(input: VolumeInput): VolumeResult {
 
   // Building pattern comparison (建物パターン別日影シミュレーション)
   let buildingPatterns: BuildingPatternResult | null = null;
-  if (zoning.shadowRegulation !== null) {
+  {
     const sourceField = nonShadowField ?? combinedField;
     const envelopeHF: HeightFieldData = {
       cols: sourceField.cols,
