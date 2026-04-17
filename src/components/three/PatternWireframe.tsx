@@ -9,6 +9,7 @@ import type { PatternResult } from '@/engine/types';
 interface PatternWireframeProps {
   pattern: PatternResult;
   color: string;
+  opacity?: number;
 }
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -55,7 +56,7 @@ function getFootprintCentroid(footprint: PatternResult['footprint']) {
   };
 }
 
-export function PatternWireframe({ pattern, color }: PatternWireframeProps) {
+export function PatternWireframe({ pattern, color, opacity = 0.2 }: PatternWireframeProps) {
   const geometry = useMemo(() => {
     if (!pattern.footprint || pattern.footprint.length < 3 || pattern.maxHeight <= 0) {
       return null;
@@ -139,7 +140,7 @@ export function PatternWireframe({ pattern, color }: PatternWireframeProps) {
         <meshBasicMaterial
           color={color}
           depthWrite={false}
-          opacity={0.2}
+          opacity={opacity}
           side={THREE.DoubleSide}
           transparent
         />
@@ -149,7 +150,7 @@ export function PatternWireframe({ pattern, color }: PatternWireframeProps) {
         <meshBasicMaterial
           color={color}
           depthWrite={false}
-          opacity={0.2}
+          opacity={opacity}
           side={THREE.DoubleSide}
           transparent
         />
@@ -159,34 +160,36 @@ export function PatternWireframe({ pattern, color }: PatternWireframeProps) {
         <meshBasicMaterial
           color={color}
           depthWrite={false}
-          opacity={0.2}
+          opacity={opacity}
           side={THREE.DoubleSide}
           transparent
         />
       </mesh>
 
       <lineSegments geometry={geometry.edgeGeometry}>
-        <lineBasicMaterial color={color} opacity={0.7} transparent />
+        <lineBasicMaterial color={color} opacity={Math.min(opacity * 3.5, 1)} transparent />
       </lineSegments>
 
-      <Html position={[geometry.centroid.x, pattern.maxHeight + 0.5, geometry.centroid.y]} center>
-        <div
-          style={{
-            background: hexToRgba(color, 0.85),
-            borderRadius: 4,
-            color: '#ffffff',
-            fontSize: '11px',
-            fontWeight: 700,
-            lineHeight: 1.3,
-            padding: '4px 6px',
-            textAlign: 'center',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <div>{pattern.name}</div>
-          <div>{`${pattern.maxFloors}F / ${pattern.maxHeight.toFixed(1)}m`}</div>
-        </div>
-      </Html>
+      {opacity > 0.1 && (
+        <Html position={[geometry.centroid.x, pattern.maxHeight + 0.5, geometry.centroid.y]} center>
+          <div
+            style={{
+              background: hexToRgba(color, 0.85),
+              borderRadius: 4,
+              color: '#ffffff',
+              fontSize: '11px',
+              fontWeight: 700,
+              lineHeight: 1.3,
+              padding: '4px 6px',
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <div>{pattern.name}</div>
+            <div>{`${pattern.maxFloors}F / ${pattern.maxHeight.toFixed(1)}m`}</div>
+          </div>
+        </Html>
+      )}
     </group>
   );
 }

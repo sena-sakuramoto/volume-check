@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 export type LayerPreset = 'basic' | 'shadow' | 'pattern' | 'custom';
+export type PatternKey = 'lowRise' | 'midHighRise' | 'optimal';
 
 export interface LayerState {
   road: boolean;
@@ -47,26 +48,62 @@ interface ViewerStore {
   preset: LayerPreset;
   layers: LayerState;
   shadowTimeValue: number;
+  selectedPattern: PatternKey | null;
 
   selectPreset: (p: LayerPreset) => void;
+  selectPattern: (key: PatternKey | null) => void;
   toggleLayer: (key: keyof LayerState) => void;
   setShadowTime: (value: number) => void;
 }
+
+const PATTERN_LAYER_KEYS: Record<PatternKey, keyof Pick<
+  LayerState,
+  'buildingPatternLowRise' | 'buildingPatternMidHigh' | 'buildingPatternOptimal'
+>> = {
+  lowRise: 'buildingPatternLowRise',
+  midHighRise: 'buildingPatternMidHigh',
+  optimal: 'buildingPatternOptimal',
+};
 
 export const useViewerStore = create<ViewerStore>((set) => ({
   preset: 'basic',
   layers: { ...PRESETS.basic },
   shadowTimeValue: 120,
+  selectedPattern: null,
 
   selectPreset: (p) =>
     set(() => {
-      if (p === 'custom') return { preset: 'custom' };
-      return { preset: p, layers: { ...PRESETS[p] } };
+      if (p === 'custom') return { preset: 'custom', selectedPattern: null };
+      return { preset: p, layers: { ...PRESETS[p] }, selectedPattern: null };
+    }),
+
+  selectPattern: (key) =>
+    set(() => {
+      if (key === null) {
+        return {
+          preset: 'pattern',
+          layers: { ...PRESETS.pattern },
+          selectedPattern: null,
+        };
+      }
+
+      return {
+        preset: 'pattern',
+        layers: {
+          ...PRESETS.pattern,
+          buildingPatternLowRise: false,
+          buildingPatternMidHigh: false,
+          buildingPatternOptimal: false,
+          [PATTERN_LAYER_KEYS[key]]: true,
+        },
+        selectedPattern: key,
+      };
     }),
 
   toggleLayer: (key) =>
     set((state) => ({
       preset: 'custom',
+      selectedPattern: null,
       layers: { ...state.layers, [key]: !state.layers[key] },
     })),
 

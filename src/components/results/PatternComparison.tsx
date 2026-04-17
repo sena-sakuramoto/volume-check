@@ -3,8 +3,21 @@
 import type { PatternResult, BuildingPatternResult } from '@/engine/types';
 import { cn } from '@/lib/cn';
 import { Badge } from '@/components/ui/shadcn/badge';
+import { useViewerStore, type PatternKey } from '@/stores/useViewerStore';
 
-function PatternCard({ pattern, isBest }: { pattern: PatternResult; isBest: boolean }) {
+function PatternCard({
+  pattern,
+  patternKey,
+  isBest,
+  isSelected,
+  onSelect,
+}: {
+  pattern: PatternResult;
+  patternKey: PatternKey;
+  isBest: boolean;
+  isSelected: boolean;
+  onSelect: (key: PatternKey | null) => void;
+}) {
   const footprintValid = pattern.footprintArea > 0 && pattern.footprint.length >= 3;
   const passLabel = footprintValid
     ? (pattern.compliance.passes ? '適合' : '不適合')
@@ -14,10 +27,17 @@ function PatternCard({ pattern, isBest }: { pattern: PatternResult; isBest: bool
     : 'text-muted-foreground';
 
   return (
-    <div className={cn(
-      'rounded-lg bg-card border px-3 py-2.5',
-      isBest ? 'border-primary/50' : 'border-border',
-    )}>
+    <div
+      className={cn(
+        'cursor-pointer rounded-lg border bg-card px-3 py-2.5 transition-all',
+        isSelected
+          ? 'border-primary ring-2 ring-primary/20 bg-primary/5'
+          : isBest
+            ? 'border-primary/50 hover:border-primary/30'
+            : 'border-border hover:border-primary/30',
+      )}
+      onClick={() => onSelect(isSelected ? null : patternKey)}
+    >
       <div className="flex items-center justify-between text-xs font-semibold text-foreground mb-1.5">
         <span>{pattern.name}</span>
         {isBest && <Badge variant="default" className="text-[9px] h-4 px-1.5">最適</Badge>}
@@ -63,6 +83,8 @@ interface PatternComparisonProps {
 }
 
 export function PatternComparison({ patterns }: PatternComparisonProps) {
+  const selectedPattern = useViewerStore((s) => s.selectedPattern);
+  const selectPattern = useViewerStore((s) => s.selectPattern);
   const { lowRise, midHighRise, optimal } = patterns;
   const candidates = [lowRise, midHighRise, optimal].filter((p) => p.footprintArea > 0);
   const best = candidates.length > 0
@@ -73,10 +95,31 @@ export function PatternComparison({ patterns }: PatternComparisonProps) {
     <div className="space-y-2">
       <h3 className="text-xs font-semibold text-muted-foreground">建物パターン比較</h3>
       <div className="grid grid-cols-1 gap-2">
-        <PatternCard pattern={lowRise} isBest={best?.name === lowRise.name} />
-        <PatternCard pattern={midHighRise} isBest={best?.name === midHighRise.name} />
-        <PatternCard pattern={optimal} isBest={best?.name === optimal.name} />
+        <PatternCard
+          pattern={lowRise}
+          patternKey="lowRise"
+          isBest={best?.name === lowRise.name}
+          isSelected={selectedPattern === 'lowRise'}
+          onSelect={selectPattern}
+        />
+        <PatternCard
+          pattern={midHighRise}
+          patternKey="midHighRise"
+          isBest={best?.name === midHighRise.name}
+          isSelected={selectedPattern === 'midHighRise'}
+          onSelect={selectPattern}
+        />
+        <PatternCard
+          pattern={optimal}
+          patternKey="optimal"
+          isBest={best?.name === optimal.name}
+          isSelected={selectedPattern === 'optimal'}
+          onSelect={selectPattern}
+        />
       </div>
+      <p className="text-[10px] text-muted-foreground">
+        パターンをクリックすると3Dビューで該当ボリュームを表示します。
+      </p>
       <p className="text-[10px] text-muted-foreground">
         最適パターンは「追加後退」を自動探索し、延べ面積が最大となる形状を提示します。
       </p>

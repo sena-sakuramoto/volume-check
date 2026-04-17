@@ -71,6 +71,7 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
   void shadowTime;
   const { position: cameraPos, target } = useMemo(() => computeCamera(site), [site]);
   const layers = useViewerStore((s) => s.layers);
+  const selectedPattern = useViewerStore((s) => s.selectedPattern);
 
   return (
     <Canvas
@@ -112,7 +113,14 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
           <EnvelopeMesh
             vertices={volumeResult.envelopeVertices}
             indices={volumeResult.envelopeIndices}
-            dimmed={layers.road || layers.adjacent || layers.north || layers.absoluteHeight || layers.shadow}
+            dimmed={
+              layers.road ||
+              layers.adjacent ||
+              layers.north ||
+              layers.absoluteHeight ||
+              layers.shadow ||
+              selectedPattern !== null
+            }
           />
         )}
 
@@ -196,13 +204,43 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
 
         {/* Building pattern wireframes */}
         {volumeResult?.buildingPatterns?.lowRise && layers.buildingPatternLowRise && (
-          <PatternWireframe pattern={volumeResult.buildingPatterns.lowRise} color="#f97316" />
+          <PatternWireframe
+            pattern={volumeResult.buildingPatterns.lowRise}
+            color="#f97316"
+            opacity={
+              selectedPattern === null
+                ? 0.2
+                : selectedPattern === 'lowRise'
+                  ? 0.35
+                  : 0.05
+            }
+          />
         )}
         {volumeResult?.buildingPatterns?.midHighRise && layers.buildingPatternMidHigh && (
-          <PatternWireframe pattern={volumeResult.buildingPatterns.midHighRise} color="#a855f7" />
+          <PatternWireframe
+            pattern={volumeResult.buildingPatterns.midHighRise}
+            color="#a855f7"
+            opacity={
+              selectedPattern === null
+                ? 0.2
+                : selectedPattern === 'midHighRise'
+                  ? 0.35
+                  : 0.05
+            }
+          />
         )}
         {volumeResult?.buildingPatterns?.optimal && layers.buildingPatternOptimal && (
-          <PatternWireframe pattern={volumeResult.buildingPatterns.optimal} color="#22d3ee" />
+          <PatternWireframe
+            pattern={volumeResult.buildingPatterns.optimal}
+            color="#22d3ee"
+            opacity={
+              selectedPattern === null
+                ? 0.2
+                : selectedPattern === 'optimal'
+                  ? 0.35
+                  : 0.05
+            }
+          />
         )}
 
         {/* Setback boundary markers + slope lines + labels */}
