@@ -3,10 +3,12 @@
 import ElectricBorder from '@/components/ui/ElectricBorder';
 import GhostCursor from '@/components/ui/GhostCursor';
 import GridDistortion from '@/components/ui/GridDistortion';
-import GridScan from '@/components/ui/GridScan';
 import MagicBento from '@/components/ui/MagicBento';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import PillNav from '@/components/ui/PillNav';
+
+const GridScan = dynamic(() => import('@/components/ui/GridScan'), { ssr: false });
 
 const navItems = [
   { href: '#hero', label: '概要' },
