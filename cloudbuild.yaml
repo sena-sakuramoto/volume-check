@@ -3,20 +3,23 @@
 # Build:   gcloud builds submit --config cloudbuild.yaml
 # Deploy:  the last step deploys to Cloud Run (region asia-northeast1).
 #
-# Required substitutions (can be overridden at submit):
+# Overridable substitutions (defaults in the block below):
 #   _SERVICE_NAME     Cloud Run service name       (default: volans-web)
 #   _REGION           Cloud Run region             (default: asia-northeast1)
 #   _IMAGE_REPO       Artifact Registry repo name  (default: volans)
-#   _GEMINI_API_KEY   Gemini API key (pass via --substitutions)
 #
-# NOTE: secrets should be stored in Secret Manager and referenced via
-# --set-secrets=GEMINI_API_KEY=gemini-api-key:latest in a follow-up change.
+# Secrets: GEMINI_API_KEY is injected from Secret Manager (`gemini-api-key`).
+# See the `--set-secrets` line in the deploy step for how to provision it.
 
 substitutions:
   _SERVICE_NAME: volans-web
   _REGION: asia-northeast1
   _IMAGE_REPO: volans
-  _GEMINI_API_KEY: ''
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: ALLOW_LOOSE
 
 images:
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_IMAGE_REPO}/volans-web:${SHORT_SHA}
@@ -56,8 +59,8 @@ steps:
       - --max-instances=3
       - --concurrency=80
       - --timeout=120s
-      - --set-env-vars=NEXT_TELEMETRY_DISABLED=1,NODE_ENV=production${_GEMINI_API_KEY_ENV}
-
-options:
-  machineType: E2_HIGHCPU_8
-  logging: CLOUD_LOGGING_ONLY
+      - --set-env-vars=NEXT_TELEMETRY_DISABLED=1,NODE_ENV=production
+      # Inject the Gemini API key via Secret Manager. Create the secret once:
+      #   echo -n "$GEMINI_API_KEY" | gcloud secrets create gemini-api-key --data-file=-
+      # Then grant the Cloud Build SA `roles/secretmanager.secretAccessor`.
+      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest

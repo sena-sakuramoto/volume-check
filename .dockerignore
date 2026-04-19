@@ -12,3 +12,12 @@ out
 .codex
 docs/handover
 .next-start*.log
+
+# test artifacts & configs (not needed at runtime)
+test-results
+playwright-report
+e2e
+playwright.config.ts
+
+# planning docs (stay in git but don't need to be in the container)
+CODEX_*.md

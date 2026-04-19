@@ -47,6 +47,27 @@ export function useSkyAnalysis(volumeResult: VolumeResult | null) {
           ? await analyzeInWorker(store.site, store.roads, volumeResult, volumeResult, opts)
           : analyzeSkyFactor(store.site, store.roads, volumeResult, volumeResult, opts);
       const elapsed = performance.now() - start;
+
+      // Persist worst-margin point to the store so report pages can surface it.
+      const worst = analysis.points.reduce<typeof analysis.points[number] | null>(
+        (acc, p) => (acc === null || p.margin < acc.margin ? p : acc),
+        null,
+      );
+      if (worst) {
+        useVolansStore.setState({
+          skyAnalysisSummary: {
+            worstValue: worst.value,
+            worstBaseline: worst.baseline,
+            worstMargin: worst.margin,
+            worstMarginPct: worst.marginPct,
+            worstLabel: worst.label,
+            totalPoints: analysis.points.length,
+            allPass: analysis.summary.allPass,
+            analyzedAt: new Date().toISOString(),
+          },
+        });
+      }
+
       setState({ analysis, running: false, error: null, elapsedMs: elapsed });
     } catch (e) {
       const msg = e instanceof Error ? e.message : '解析に失敗しました';

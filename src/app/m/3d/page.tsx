@@ -2,7 +2,14 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Share2, FileDown, Sun, Layers as LayersIcon, Box, Square, Circle, Maximize2, Ruler, Send } from 'lucide-react';
+import { ChevronDown, Share2, FileDown, Sun, Layers as LayersIcon, Send } from 'lucide-react';
+import {
+  Cube,
+  Square as SquarePh,
+  CircleDashed,
+  ArrowsOut,
+  Ruler,
+} from '@phosphor-icons/react';
 import { MobileHeader } from '@/components/volans/MobileHeader';
 import { SkyCheckPanel } from '@/components/volans/SkyCheckPanel';
 import { useVolumeCalculation } from '@/hooks/useVolumeCalculation';
@@ -100,23 +107,25 @@ export default function Mobile3DPage() {
             }}
           >
             {[
-              { icon: Box, active: true },
-              { icon: Square },
-              { icon: Circle },
-              { icon: Maximize2 },
-              { icon: Ruler },
+              { icon: Cube, label: '3D', active: true },
+              { icon: SquarePh, label: '2D' },
+              { icon: CircleDashed, label: '断面' },
+              { icon: ArrowsOut, label: '全画面' },
+              { icon: Ruler, label: '測定' },
             ].map((b, i) => {
               const Icon = b.icon;
               return (
                 <button
                   key={i}
+                  aria-label={b.label}
+                  title={b.label}
                   className="grid h-6 w-6 place-items-center rounded"
                   style={{
                     background: b.active ? 'var(--volans-primary-soft)' : 'transparent',
                     color: b.active ? 'var(--volans-primary-strong)' : 'var(--volans-muted)',
                   }}
                 >
-                  <Icon className="h-3 w-3" />
+                  <Icon size={12} weight="regular" />
                 </button>
               );
             })}
@@ -142,7 +151,7 @@ export default function Mobile3DPage() {
           </div>
         </div>
 
-        <SkyCheckPanel variant="mobile" />
+        <SkyCheckPanel variant="mobile" mobileButtonLabel="すべての測定点を確認" />
 
         <div
           className="rounded-xl p-3"

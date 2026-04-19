@@ -11,9 +11,14 @@ import type { SkyFactorPointResult } from '@/engine/sky-factor/analyze';
 
 interface SkyCheckPanelProps {
   variant?: 'panel' | 'mobile';
+  /** Override the mobile CTA text — defaults to spec §3.1 "詳細を確認する". */
+  mobileButtonLabel?: string;
 }
 
-export function SkyCheckPanel({ variant = 'panel' }: SkyCheckPanelProps) {
+export function SkyCheckPanel({
+  variant = 'panel',
+  mobileButtonLabel = '詳細を確認する',
+}: SkyCheckPanelProps) {
   const site = useVolansStore((s) => s.site);
   const roads = useVolansStore((s) => s.roads);
   const zoning = useVolansStore((s) => s.zoning);
@@ -197,7 +202,7 @@ export function SkyCheckPanel({ variant = 'panel' }: SkyCheckPanelProps) {
           className="mt-3 w-full rounded-md py-2 text-[12px] font-medium text-white disabled:opacity-50"
           style={{ background: 'var(--volans-primary)' }}
         >
-          {running ? '評価中…' : isReal ? '全 ' + total + ' 点を再評価' : '天空率の詳細を表示'}
+          {running ? '評価中…' : '天空率の詳細を表示'}
         </button>
       )}
       {variant === 'mobile' && (
@@ -211,7 +216,7 @@ export function SkyCheckPanel({ variant = 'panel' }: SkyCheckPanelProps) {
             color: 'var(--volans-text)',
           }}
         >
-          {running ? '評価中…' : '詳細を確認する'}
+          {running ? '評価中…' : mobileButtonLabel}
         </button>
       )}
     </div>

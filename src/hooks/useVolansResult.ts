@@ -142,7 +142,17 @@ export function useVolansResult(): VolansDisplay {
         pct: diffPct,
       },
 
-      skyCheck: VOLANS_DEMO.skyCheck, // per-point value shown in SkyCheckPanel via live engine
+      skyCheck: state.skyAnalysisSummary
+        ? {
+            type: state.skyAnalysisSummary.worstLabel,
+            index: 1,
+            total: state.skyAnalysisSummary.totalPoints,
+            value: state.skyAnalysisSummary.worstValue,
+            baseline: state.skyAnalysisSummary.worstBaseline,
+            margin: state.skyAnalysisSummary.worstMargin,
+            marginPct: state.skyAnalysisSummary.worstMarginPct,
+          }
+        : VOLANS_DEMO.skyCheck, // fallback: per-point live values shown in SkyCheckPanel
       checks,
 
       skyEngineReal: state.skyMaxScale !== null,

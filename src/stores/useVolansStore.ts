@@ -41,6 +41,21 @@ export interface VolansProjectState {
   skyMaxScale: number | null;
   skyWorstMargin: number | null;
   skyOptimizedAt: string | null;
+
+  /**
+   * Worst-margin point from the most recent per-point sky-factor analysis.
+   * Populated by useSkyAnalysis so report pages can surface a real number.
+   */
+  skyAnalysisSummary: {
+    worstValue: number;
+    worstBaseline: number;
+    worstMargin: number;
+    worstMarginPct: number;
+    worstLabel: string;
+    totalPoints: number;
+    allPass: boolean;
+    analyzedAt: string;
+  } | null;
 }
 
 export interface VolansStore extends VolansProjectState {
@@ -86,6 +101,7 @@ const INITIAL: VolansProjectState = {
   skyMaxScale: null,
   skyWorstMargin: null,
   skyOptimizedAt: null,
+  skyAnalysisSummary: null,
 };
 
 function normalizeRatio(value: number): number {
@@ -420,6 +436,7 @@ export const useVolansStore = create<VolansStore>()(
         skyMaxScale: state.skyMaxScale,
         skyWorstMargin: state.skyWorstMargin,
         skyOptimizedAt: state.skyOptimizedAt,
+        skyAnalysisSummary: state.skyAnalysisSummary,
         // NOTE: parcelCandidates intentionally not persisted (re-fetch on demand)
       }),
     },

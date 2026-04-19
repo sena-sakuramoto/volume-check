@@ -1,17 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { ChevronDown, Sun, Layers as LayersIcon } from 'lucide-react';
 import {
-  ChevronDown,
-  Sun,
-  Layers as LayersIcon,
-  Box,
-  Square,
-  Circle,
-  Maximize2,
+  Cube,
+  Square as SquarePh,
+  CircleDashed,
+  ArrowsOut,
   Ruler,
-} from 'lucide-react';
+} from '@phosphor-icons/react';
 import { useVolumeCalculation } from '@/hooks/useVolumeCalculation';
 import { useVolansResult } from '@/hooks/useVolansResult';
 import { useVolansStore } from '@/stores/useVolansStore';
@@ -231,10 +229,10 @@ export default function VolansSkyPage() {
                     }}
                   >
                     {[
-                      { icon: Box, label: '3D', active: true },
-                      { icon: Square, label: '2D' },
-                      { icon: Circle, label: '断面' },
-                      { icon: Maximize2, label: '全画面' },
+                      { icon: Cube, label: '3D', active: true },
+                      { icon: SquarePh, label: '2D' },
+                      { icon: CircleDashed, label: '断面' },
+                      { icon: ArrowsOut, label: '全画面' },
                       { icon: Ruler, label: '測定' },
                     ].map((b) => {
                       const Icon = b.icon;
@@ -249,7 +247,7 @@ export default function VolansSkyPage() {
                           aria-label={b.label}
                           title={b.label}
                         >
-                          <Icon className="h-3.5 w-3.5" />
+                          <Icon size={14} weight="regular" />
                         </button>
                       );
                     })}

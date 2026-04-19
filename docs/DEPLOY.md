@@ -48,5 +48,6 @@ docker run --rm -p 8080:8080 -e GEMINI_API_KEY=xxx volans-local
 ```
 
 ## 参考
-- `next.config.ts` は `output: 'standalone'` を有効化
-- ディレクトリ改名 (`volume-check` → `volans`) は手動で実施予定。改名後は `package.json` の `"name"` も `volans` に更新推奨
+- Next.js 16 + Turbopack が `output: 'standalone'` を未サポートなため、現状の Docker イメージは `node_modules` + `.next` を丸ごと同梱（約 250–350 MB）。Turbopack が standalone を吐き出せるようになったら Dockerfile の runtime ステージを slim 化する。
+- ディレクトリ改名 (`volume-check` → `volans`) は手動で実施予定。改名後は `package.json` の `"name"` も `volans` に更新推奨。
+- Gemini API キーは `--set-secrets` 経由で注入（`cloudbuild.yaml` 参照）。
