@@ -13,6 +13,12 @@ import {
 import type { VolumeResult, SiteBoundary, Road, ZoningData } from '@/engine/types';
 import { useViewerStore } from '@/stores/useViewerStore';
 import { EnvelopeMesh } from './EnvelopeMesh';
+import { EnvelopeDashed } from './EnvelopeDashed';
+import { CityBackdrop } from './CityBackdrop';
+import { SunMarker } from './SunMarker';
+import { OsmBuildings } from './OsmBuildings';
+import { PlateauTiles } from './PlateauTiles';
+import { useVolansStore } from '@/stores/useVolansStore';
 import { SetbackLayer } from './SetbackLayer';
 import { SetbackLines } from './SetbackLines';
 import { SitePlane } from './SitePlane';
@@ -30,6 +36,15 @@ export interface ViewerProps {
   floorHeights: number[];
   shadowTime: { hour: number; minute: number } | null;
   shadowMask: Uint8Array | null;
+  /** VOLANS: show slant/sky envelope dashed overlays */
+  showVolansEnvelopes?: boolean;
+  /** uniform scale factor for sky envelope (placeholder until Phase 5). Default 1.08 */
+  skyEnvelopeScale?: number;
+  /** VOLANS: show procedural surrounding city + sun marker (canonical look) */
+  showVolansCity?: boolean;
+  /** VOLANS: attempt to load PLATEAU 3D Tiles (LOD1) for Tokyo. Fails
+   *  gracefully — OSM buildings remain as backup. */
+  showPlateauTiles?: boolean;
 }
 
 function computeCamera(site: SiteBoundary | null): {
@@ -67,7 +82,9 @@ const SETBACK_COLORS: Record<string, string> = {
   shadow: '#22d3ee',
 };
 
-export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadowTime, shadowMask }: ViewerProps) {
+export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadowTime, shadowMask, showVolansEnvelopes = false, skyEnvelopeScale = 1.08, showVolansCity = false, showPlateauTiles = false }: ViewerProps) {
+  const storeLat = useVolansStore((s) => s.lat);
+  const storeLng = useVolansStore((s) => s.lng);
   void shadowTime;
   const { position: cameraPos, target } = useMemo(() => computeCamera(site), [site]);
   const layers = useViewerStore((s) => s.layers);
@@ -99,6 +116,20 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
           infiniteGrid
         />
 
+        {/* VOLANS: surrounding city (real OSM buildings + procedural fallback) */}
+        {showVolansCity && (
+          <>
+            <OsmBuildings site={site} />
+            <CityBackdrop site={site} count={18} />
+            <SunMarker />
+          </>
+        )}
+
+        {/* VOLANS: PLATEAU LOD1 tiles (opt-in) */}
+        {showPlateauTiles && storeLat !== null && storeLng !== null && (
+          <PlateauTiles lat={storeLat} lng={storeLng} />
+        )}
+
         {/* Site + roads */}
         {site && (
           <SitePlane
@@ -108,11 +139,21 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
           />
         )}
 
-        {/* Main envelope */}
+        {/* Main envelope (blue-tinted in VOLANS mode to mimic canonical building tone) */}
         {volumeResult && volumeResult.envelopeVertices.length > 0 && (
           <EnvelopeMesh
             vertices={volumeResult.envelopeVertices}
             indices={volumeResult.envelopeIndices}
+            color={showVolansEnvelopes ? '#5d86d9' : '#e8eaed'}
+            roughness={showVolansEnvelopes ? 0.55 : 0.6}
+          />
+        )}
+
+        {/* VOLANS: dashed slant + sky envelope overlays */}
+        {showVolansEnvelopes && volumeResult && volumeResult.envelopeVertices.length > 0 && (
+          <VolansEnvelopeOverlay
+            volumeResult={volumeResult}
+            defaultScale={skyEnvelopeScale}
           />
         )}
 
@@ -217,5 +258,37 @@ export function Viewer({ site, roads, zoning, volumeResult, floorHeights, shadow
         </GizmoHelper>
       </Suspense>
     </Canvas>
+  );
+}
+
+function VolansEnvelopeOverlay({
+  volumeResult,
+  defaultScale,
+}: {
+  volumeResult: VolumeResult;
+  defaultScale: number;
+}) {
+  const storeScale = useVolansStore((s) => s.skyMaxScale);
+  const k = storeScale ?? defaultScale;
+  return (
+    <>
+      <EnvelopeDashed
+        vertices={volumeResult.envelopeVertices}
+        indices={volumeResult.envelopeIndices}
+        color="#ef4444"
+        dashSize={0.45}
+        gapSize={0.3}
+        opacity={0.85}
+      />
+      <EnvelopeDashed
+        vertices={volumeResult.envelopeVertices}
+        indices={volumeResult.envelopeIndices}
+        color="#3eb883"
+        dashSize={0.3}
+        gapSize={0.22}
+        scale={k}
+        opacity={0.9}
+      />
+    </>
   );
 }

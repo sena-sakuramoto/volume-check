@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
 
 @layer base {
   :root {
@@ -41,6 +42,63 @@
     --input: 35 22% 81%;
     --ring: 176 80% 31%;
     --radius: 0.625rem;
+
+    /* VOLANS design tokens (NANI→VOLANS 2026-04-17) */
+    --volans-bg: #f6f7fb;
+    --volans-surface: #ffffff;
+    --volans-surface-alt: #fbfcfe;
+    --volans-border: #e5e9f0;
+    --volans-border-strong: #d0d6e1;
+    --volans-text: #1c2230;
+    --volans-text-soft: #394055;
+    --volans-muted: #6b7280;
+    --volans-primary: #3b6de1;
+    --volans-primary-strong: #2b57bf;
+    --volans-primary-soft: #e4ecff;
+    --volans-success: #22a06b;
+    --volans-success-soft: #e7f5ee;
+    --volans-warning: #f19342;
+    --volans-warning-soft: #fff0e0;
+    --volans-danger: #ef4444;
+    --volans-sky-slant: #5d86d9;
+    --volans-sky-slant-soft: #e4ecff;
+    --volans-sky-relax: #3eb883;
+    --volans-sky-relax-soft: #e7f5ee;
+  }
+}
+
+/* VOLANS print rules: isolate #volans-print area when printing */
+.volans-print-only {
+  display: none;
+}
+@media print {
+  .volans-print-only {
+    display: block !important;
+  }
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  html, body {
+    background: #ffffff !important;
+  }
+  body > *:not(#volans-print-root) {
+    visibility: hidden !important;
+  }
+  #volans-print-root,
+  #volans-print-root * {
+    visibility: visible !important;
+  }
+  #volans-print-root {
+    position: absolute !important;
+    inset: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+  .volans-no-print,
+  nav[data-volans-bottom-nav="true"] {
+    display: none !important;
   }
 }
 

@@ -1,0 +1,52 @@
+# VOLANS — Cloud Run デプロイ手順
+
+## 前提
+- GCP プロジェクト（例: `archi-prisma-volans`）を作成済み
+- Artifact Registry に `volans` リポジトリ（Docker）を作成
+  ```bash
+  gcloud artifacts repositories create volans \
+    --repository-format=docker \
+    --location=asia-northeast1
+  ```
+- Cloud Build サービスアカウントに以下のロール付与:
+  - `roles/run.admin`
+  - `roles/artifactregistry.writer`
+  - `roles/iam.serviceAccountUser`
+
+## 初回デプロイ
+```bash
+cd D:/senaa_dev/volume-check
+gcloud builds submit --config cloudbuild.yaml \
+  --substitutions=_SERVICE_NAME=volans-web,_REGION=asia-northeast1
+```
+完了後、Cloud Run コンソールに `volans-web` が表示される。
+
+## 環境変数
+ローカルでは `.env.local` に格納。本番では Secret Manager を推奨:
+```bash
+# 一度だけ
+echo -n "$GEMINI_API_KEY" | gcloud secrets create gemini-api-key --data-file=-
+
+# Cloud Run に secret を注入
+gcloud run services update volans-web \
+  --region=asia-northeast1 \
+  --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+```
+
+## 独自ドメイン
+```bash
+gcloud run domain-mappings create --service=volans-web \
+  --domain=volans.archi-prisma.co.jp --region=asia-northeast1
+```
+その後、DNS の CNAME を案内値に設定。
+
+## ローカルで Docker 動作確認
+```bash
+docker build -t volans-local .
+docker run --rm -p 8080:8080 -e GEMINI_API_KEY=xxx volans-local
+# → http://localhost:8080
+```
+
+## 参考
+- `next.config.ts` は `output: 'standalone'` を有効化
+- ディレクトリ改名 (`volume-check` → `volans`) は手動で実施予定。改名後は `package.json` の `"name"` も `volans` に更新推奨

@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.github
+.vscode
+*.log
+.env.local
+.env.development.local
+.env.test.local
+out
+.claude
+.codex
+docs/handover
+.next-start*.log
