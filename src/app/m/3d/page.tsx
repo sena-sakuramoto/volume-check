@@ -33,7 +33,9 @@ const Viewer = dynamic(
 
 export default function Mobile3DPage() {
   const [viewReady, setViewReady] = useState(false);
-  useEffect(() => setViewReady(true), []);
+  useEffect(() => {
+    queueMicrotask(() => setViewReady(true));
+  }, []);
   const site = useVolansStore((s) => s.site);
   const roads = useVolansStore((s) => s.roads);
   const zoning = useVolansStore((s) => s.zoning);

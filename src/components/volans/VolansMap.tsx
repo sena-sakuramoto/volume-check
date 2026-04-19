@@ -133,6 +133,10 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
         mapRef.current = null;
       }
     };
+    // `candidates` and `selectedIdx` feed the map INIT only; subsequent
+    // changes are picked up by the dedicated highlight-update effect below.
+    // Including them here would re-create the map on every tap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lat, lng, showZoom]);
 
   // Update selection highlight without re-creating the map

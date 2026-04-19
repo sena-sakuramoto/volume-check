@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, RotateCcw, Undo2, Redo2 } from 'lucide-react';
 import type { Point2D } from '@/engine/types';
 import { useVolansStore } from '@/stores/useVolansStore';
@@ -35,11 +35,14 @@ export function SiteEditor({ height = 260 }: SiteEditorProps) {
   const [draggingIdx, setDraggingIdx] = useState<number>(-1);
   const { record, undo, redo, canUndo, canRedo } = useUndoRedo();
 
-  // Reset baseline if the store site changes out-of-band
-  if (initial.current !== site.vertices && draggingIdx === -1) {
+  // Reset baseline if the store site changes out-of-band. Deferred to a
+  // microtask so we don't call setState synchronously inside the effect body.
+  useEffect(() => {
+    if (draggingIdx !== -1) return;
+    if (initial.current === site.vertices) return;
     initial.current = site.vertices;
-    if (draft !== site.vertices) setDraft(site.vertices);
-  }
+    queueMicrotask(() => setDraft(site.vertices));
+  }, [site.vertices, draggingIdx]);
 
   const bbox = useMemo(() => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;

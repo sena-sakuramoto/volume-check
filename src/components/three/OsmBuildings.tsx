@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useVolansStore } from '@/stores/useVolansStore';
 import type { SiteBoundary } from '@/engine/types';
@@ -32,7 +32,9 @@ export function OsmBuildings({ site, radius = 200, maxBuildings = 150 }: OsmBuil
 
   useEffect(() => {
     if (lat === null || lng === null || !site || site.vertices.length < 3) {
-      setMeshes(null);
+      // Clear any stale meshes on a microtask so we don't call setState
+      // synchronously inside the effect body.
+      queueMicrotask(() => setMeshes((prev) => (prev === null ? prev : null)));
       return;
     }
     let cancelled = false;

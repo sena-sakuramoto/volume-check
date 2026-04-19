@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local parallel worktrees — linted in their own workspace, not here.
+    ".claude/**",
   ]),
 ]);
 

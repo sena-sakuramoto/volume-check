@@ -211,7 +211,7 @@ export const useVolansStore = create<VolansStore>()(
             };
           }
 
-          let parcelCandidates: ParcelCandidate[] = [];
+          const parcelCandidates: ParcelCandidate[] = [];
           let nextSite = current.site;
           let chosenRing: GeoPoint[] | null = null;
           if (parcelResp && parcelResp.ok) {

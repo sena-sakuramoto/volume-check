@@ -47,6 +47,16 @@ docker run --rm -p 8080:8080 -e GEMINI_API_KEY=xxx volans-local
 # → http://localhost:8080
 ```
 
+## Firebase Auth / Firestore（クラウド同期）
+VOLANS はクラウド保存をオプショナル機能として提供。`.env.local` に `NEXT_PUBLIC_FIREBASE_*` 4点を設定するとヘッダのサインイン UI が有効化される。
+
+セキュリティルールは `firestore.rules` に同梱。初回 deploy:
+```bash
+firebase init firestore  # rulesFile を firestore.rules に指定
+firebase deploy --only firestore:rules
+```
+ルールの要点：`users/{uid}/volansProjects/{id}` は `request.auth.uid == uid` のみ read/write 可、その他は全面 deny。
+
 ## 参考
 - Next.js 16 + Turbopack が `output: 'standalone'` を未サポートなため、現状の Docker イメージは `node_modules` + `.next` を丸ごと同梱（約 250–350 MB）。Turbopack が standalone を吐き出せるようになったら Dockerfile の runtime ステージを slim 化する。
 - ディレクトリ改名 (`volume-check` → `volans`) は手動で実施予定。改名後は `package.json` の `"name"` も `volans` に更新推奨。

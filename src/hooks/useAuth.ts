@@ -31,8 +31,14 @@ export function useAuth() {
   useEffect(() => {
     const bundle = getFirebase();
     if (!bundle) {
-      setState((s) => ({ ...s, initialized: true }));
-      return;
+      // Defer the "no firebase" init flip to a microtask so we don't setState
+      // synchronously inside the effect body.
+      const t = queueMicrotask(() =>
+        setState((s) => ({ ...s, initialized: true })),
+      );
+      return () => {
+        void t;
+      };
     }
     const unsub = onAuthStateChanged(bundle.auth, (user) => {
       setState((s) => ({ ...s, user, initialized: true, error: null }));

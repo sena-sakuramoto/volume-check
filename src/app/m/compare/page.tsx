@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Plus } from 'lucide-react';
 import { MobileHeader } from '@/components/volans/MobileHeader';
 import { useVolansResult } from '@/hooks/useVolansResult';
@@ -26,6 +27,13 @@ const toneBg = {
 export default function MobileComparePage() {
   const [tab, setTab] = useState<Tab>('list');
   const d = useVolansResult();
+  const router = useRouter();
+
+  // "+ 新しいパターンを追加" → spec §6 flow D→C: return to the input step where
+  // the user adjusts conditions before re-running.
+  function addPattern() {
+    router.push('/m/input');
+  }
 
   // Build patterns from real engine output. Third pattern = midpoint scenario.
   const midFloorArea = (d.slant.floorArea + d.sky.floorArea) / 2;
@@ -202,6 +210,7 @@ export default function MobileComparePage() {
         )}
 
         <button
+          onClick={addPattern}
           className="mt-1 flex items-center justify-center gap-1 rounded-md py-2 text-[12px] font-medium"
           style={{
             background: 'var(--volans-surface)',
