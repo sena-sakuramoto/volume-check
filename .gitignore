@@ -42,3 +42,17 @@ next-env.d.ts
 
 # local parallel worktrees
 .claude/worktrees/
+
+# local dev server / codex runner logs
+.next-start*.log
+next-start*.log
+.codex/
+
+# playwright test artifacts
+/test-results/
+/playwright-report/
+/playwright/.cache/
+
+# screenshot dumps (Japanese-named snapshots etc.)
+*.screenshot.png
+スクリーンショット*.png

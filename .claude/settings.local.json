@@ -1,7 +1,40 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(xargs grep:*)",
+      "Bash(ls:*)",
+      "Bash(npm test:*)",
+      "Bash(xargs wc:*)",
+      "Bash(npx ts-node:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.mlit.go.jp)",
+      "WebFetch(domain:api.plateauview.mlit.go.jp)",
+      "WebFetch(domain:www.geospatial.jp)",
+      "WebFetch(domain:reearth.engineering)",
+      "WebFetch(domain:front.geospatial.jp)",
+      "WebFetch(domain:note.com)",
+      "WebFetch(domain:amx-project.github.io)",
+      "WebFetch(domain:project-plateau.github.io)",
+      "WebFetch(domain:blog.esrij.com)",
+      "WebFetch(domain:kouzuviewer.com)",
+      "WebFetch(domain:gic-plateau.s3.ap-northeast-1.amazonaws.com)",
+      "WebFetch(domain:qiita.com)",
+      "Bash(curl:*)",
+      "WebFetch(domain:geolonia.github.io)",
+      "WebFetch(domain:www.tellusxdp.com)",
+      "Bash(node:*)",
+      "Bash(npx jest:*)",
+      "Bash(pnpm test:*)",
+      "Bash(node_modules/.bin/jest:*)",
+      "Bash(pnpm:*)",
+      "Bash(CI=true pnpm install:*)",
+      "Bash(rm:*)",
+      "Bash(npx next:*)",
+      "Bash(CI=true npx jest:*)",
+      "Bash(netstat:*)",
+      "Bash(start:*)"
     ]
   }
 }
