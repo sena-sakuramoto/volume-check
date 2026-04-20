@@ -14,6 +14,7 @@ import {
   AnalysisProgressOverlay,
   type ProgressStep,
 } from '@/components/volans/AnalysisProgressOverlay';
+import { SiteSourceBadge } from '@/components/volans/SiteSourceBadge';
 import { useVolansStore } from '@/stores/useVolansStore';
 import { useVolumeCalculation } from '@/hooks/useVolumeCalculation';
 import { useSkyAnalysis } from '@/hooks/useSkyAnalysis';
@@ -287,13 +288,19 @@ export default function MobileInputPage() {
           </div>
 
           <div className="mt-3">
-            <div
-              className="mb-1.5 text-[10px] font-semibold"
-              style={{ color: 'var(--volans-muted)' }}
-            >
-              選択中の敷地プレビュー
+            <div className="mb-1.5 flex items-center justify-between">
+              <div
+                className="text-[10px] font-semibold"
+                style={{ color: 'var(--volans-muted)' }}
+              >
+                選択中の敷地プレビュー
+              </div>
+              <SiteSourceBadge compact />
             </div>
             <SitePreview site={store.site} />
+            <div className="mt-2">
+              <SiteSourceBadge />
+            </div>
           </div>
 
           {store.parcelCandidates.length === 0 && store.lat !== null && store.lng !== null && (
@@ -305,41 +312,52 @@ export default function MobileInputPage() {
               }}
             >
               <div className="font-medium" style={{ color: 'var(--volans-warning)' }}>
-                この地点の筆界データが取得できませんでした
+                この地点の筆界データが見つかりませんでした
               </div>
-              <div className="mt-0.5" style={{ color: 'var(--volans-muted)' }}>
-                下の「敷地形状を編集」で手動調整するか、CAD (DXF) / 測量図画像を取り込めます。
+              <div className="mt-0.5 leading-snug" style={{ color: 'var(--volans-muted)' }}>
+                農研機構 AMX 地番データは都心ビル街・新興住宅地で欠損が多めです。<br />
+                **正確な検討には** CAD (DXF) / 測量図 OCR / 地図上の手動描画（地図右下の「🖋 描画モード」）の
+                いずれかで、実際の敷地の輪郭を取り込んでください。
               </div>
-              <div className="mt-2 grid grid-cols-3 gap-1">
-                {[
-                  { w: 10, h: 15, label: '10×15m (150㎡)' },
-                  { w: 15, h: 20, label: '15×20m (300㎡)' },
-                  { w: 20, h: 25, label: '20×25m (500㎡)' },
-                ].map((preset) => (
-                  <button
-                    key={preset.label}
-                    onClick={() => {
-                      useVolansStore.getState().setSiteFromCad(
-                        [
-                          { x: 0, y: 0 },
-                          { x: preset.w, y: 0 },
-                          { x: preset.w, y: preset.h },
-                          { x: 0, y: preset.h },
-                        ],
-                        { roadEdgeIndices: [[0, 1]], roadWidthDefault: 6 },
-                      );
-                    }}
-                    className="rounded px-1 py-1 text-[10px] font-medium transition-colors hover:brightness-95"
-                    style={{
-                      background: 'var(--volans-surface)',
-                      border: `1px solid var(--volans-border-strong)`,
-                      color: 'var(--volans-text)',
-                    }}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
+              <details className="mt-2 text-[10px]">
+                <summary
+                  className="cursor-pointer"
+                  style={{ color: 'var(--volans-muted)' }}
+                >
+                  試算用の仮矩形を使う（法的根拠なし）
+                </summary>
+                <div className="mt-1.5 grid grid-cols-3 gap-1">
+                  {[
+                    { w: 10, h: 15, label: '10×15m (150㎡)' },
+                    { w: 15, h: 20, label: '15×20m (300㎡)' },
+                    { w: 20, h: 25, label: '20×25m (500㎡)' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      onClick={() => {
+                        useVolansStore.getState().setSiteFromCad(
+                          [
+                            { x: 0, y: 0 },
+                            { x: preset.w, y: 0 },
+                            { x: preset.w, y: preset.h },
+                            { x: 0, y: preset.h },
+                          ],
+                          { roadEdgeIndices: [[0, 1]], roadWidthDefault: 6 },
+                        );
+                        useVolansStore.setState({ siteSource: 'manual' });
+                      }}
+                      className="rounded px-1 py-1 text-[10px] font-medium transition-colors hover:brightness-95"
+                      style={{
+                        background: 'var(--volans-surface)',
+                        border: `1px solid var(--volans-border-strong)`,
+                        color: 'var(--volans-text)',
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </details>
             </div>
           )}
 

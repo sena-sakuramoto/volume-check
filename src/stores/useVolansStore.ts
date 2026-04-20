@@ -37,6 +37,18 @@ export interface VolansProjectState {
   parcelCandidates: ParcelCandidate[];
   selectedParcelIndex: number;
 
+  /**
+   * Where did the current site polygon come from? Used for the
+   * confidence badge so the user always knows what data lineage is
+   * driving the volume check.
+   *   - 'demo':     INITIAL demo polygon (default)
+   *   - 'parcel':   chosen from NARO AMX parcel candidates (authoritative)
+   *   - 'manual':   user drew / tapped on the map (best-effort)
+   *   - 'dxf':      from DxfBoundaryPicker
+   *   - 'ocr':      from OcrBoundaryPicker
+   */
+  siteSource: 'demo' | 'parcel' | 'manual' | 'dxf' | 'ocr';
+
   /** 天空率 optimisation result — set by searchMaxSkyVolume */
   skyMaxScale: number | null;
   skyWorstMargin: number | null;
@@ -101,6 +113,7 @@ const INITIAL: VolansProjectState = {
   parcelCandidates: [],
   selectedParcelIndex: -1,
   progressLabel: null,
+  siteSource: 'demo',
   skyMaxScale: null,
   skyWorstMargin: null,
   skyOptimizedAt: null,
@@ -388,6 +401,11 @@ export const useVolansStore = create<VolansStore>()(
         set({
           site: { vertices: verts, area },
           roads: nextRoads.length > 0 ? nextRoads : get().roads,
+          // setSiteFromCad is called by DXF import, OCR import, and the
+          // /m/input "map tap fallback" presets. Callers can override
+          // siteSource via a follow-up setState — default here is 'manual'
+          // because that's the worst case (preset rectangle).
+          siteSource: get().siteSource === 'demo' ? 'manual' : get().siteSource,
           updatedAt: new Date().toISOString(),
         });
       },
@@ -408,6 +426,7 @@ export const useVolansStore = create<VolansStore>()(
           set({
             site,
             selectedParcelIndex: index,
+            siteSource: 'parcel',
             updatedAt: new Date().toISOString(),
           });
         }
@@ -436,6 +455,7 @@ export const useVolansStore = create<VolansStore>()(
         floorHeights: state.floorHeights,
         updatedAt: state.updatedAt,
         lastRunAt: state.lastRunAt,
+        siteSource: state.siteSource,
         skyMaxScale: state.skyMaxScale,
         skyWorstMargin: state.skyWorstMargin,
         skyOptimizedAt: state.skyOptimizedAt,

@@ -10,33 +10,6 @@ interface VolansMapProps {
   showZoom?: boolean;
 }
 
-/**
- * Build a rectangular site (width × depth, meters) centered on lat/lng,
- * aligned north-up. Returns a 4-vertex ring in GeoPoint order for
- * `buildSiteFromGeoRing` to project into local meters.
- */
-function geoRectangleAround(
-  lat: number,
-  lng: number,
-  widthMeters: number,
-  depthMeters: number,
-): { lat: number; lng: number }[] {
-  const EARTH = 6378137;
-  const latRad = (lat * Math.PI) / 180;
-  const halfW = widthMeters / 2;
-  const halfD = depthMeters / 2;
-  // metersPerLng at this latitude
-  const mPerLat = (Math.PI * EARTH) / 180;
-  const mPerLng = mPerLat * Math.cos(latRad);
-  const dLat = halfD / mPerLat;
-  const dLng = halfW / mPerLng;
-  return [
-    { lat: lat - dLat, lng: lng - dLng },
-    { lat: lat - dLat, lng: lng + dLng },
-    { lat: lat + dLat, lng: lng + dLng },
-    { lat: lat + dLat, lng: lng - dLng },
-  ];
-}
 
 /**
  * MapLibre map with OSM tiles, a red marker at the geocoded point,
@@ -51,10 +24,42 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
   const candidates = useVolansStore((s) => s.parcelCandidates);
   const selectedIdx = useVolansStore((s) => s.selectedParcelIndex);
   const [toast, setToast] = useState<string | null>(null);
+  const [drawMode, setDrawMode] = useState(false);
+  const drawModeRef = useRef(drawMode);
+  drawModeRef.current = drawMode;
+  const [drawPoints, setDrawPoints] = useState<{ lat: number; lng: number }[]>([]);
+  const drawPointsRef = useRef(drawPoints);
+  drawPointsRef.current = drawPoints;
 
   function showToast(msg: string) {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2400);
+  }
+
+  function commitDrawing() {
+    const pts = drawPointsRef.current;
+    if (pts.length < 3) {
+      showToast('頂点は3つ以上必要です');
+      return;
+    }
+    const site = buildSiteFromGeoRing(pts);
+    if (site) {
+      useVolansStore.setState({
+        site,
+        siteSource: 'manual',
+        updatedAt: new Date().toISOString(),
+      });
+      setDrawMode(false);
+      setDrawPoints([]);
+      showToast(`${pts.length}頂点の敷地を確定しました`);
+    } else {
+      showToast('敷地形状の確定に失敗しました');
+    }
+  }
+
+  function cancelDrawing() {
+    setDrawMode(false);
+    setDrawPoints([]);
   }
 
   useEffect(() => {
@@ -176,39 +181,28 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
           map.getCanvas().style.cursor = '';
         });
 
-        // Click anywhere on the map (not on a parcel) → drop a 15×20m site
-        // rectangle centered on the tap. Gives a usable fallback when the
-        // AMX parcel PMTiles don't cover this location (common in
-        // downtown / new developments).
-        map.on('click', (e: { lngLat: { lng: number; lat: number }; defaultPrevented?: boolean }) => {
-          // Skip if the click already hit a parcel — that handler above
-          // will win first by event propagation.
+        // Map-wide click: either append a draw-mode vertex, or (outside
+        // draw mode) do nothing — the parcels-fill handler above is the
+        // authoritative "select site" interaction.
+        map.on('click', (e: { lngLat: { lng: number; lat: number }; point: { x: number; y: number } }) => {
+          if (!drawModeRef.current) return;
           const hit = map.queryRenderedFeatures(
-            [
-              (e as unknown as { point: { x: number; y: number } }).point?.x ?? 0,
-              (e as unknown as { point: { x: number; y: number } }).point?.y ?? 0,
-            ] as unknown as [number, number],
+            [e.point.x, e.point.y] as unknown as [number, number],
             { layers: ['parcels-fill'] },
           );
           if (hit && hit.length > 0) return;
-          const ring = geoRectangleAround(e.lngLat.lat, e.lngLat.lng, 15, 20);
-          const site = buildSiteFromGeoRing(ring);
-          if (site) {
-            useVolansStore.setState({
-              site,
-              lat: e.lngLat.lat,
-              lng: e.lngLat.lng,
-              updatedAt: new Date().toISOString(),
-            });
-            showToast('この地点に 15×20m の敷地を設定');
-          }
+          setDrawPoints((prev) => [...prev, { lat: e.lngLat.lat, lng: e.lngLat.lng }]);
         });
         map.on('mousemove', (e: { point: { x: number; y: number } }) => {
           const hit = map.queryRenderedFeatures(
             [e.point.x, e.point.y] as unknown as [number, number],
             { layers: ['parcels-fill'] },
           );
-          map.getCanvas().style.cursor = hit && hit.length > 0 ? 'pointer' : 'crosshair';
+          if (drawModeRef.current) {
+            map.getCanvas().style.cursor = 'crosshair';
+          } else {
+            map.getCanvas().style.cursor = hit && hit.length > 0 ? 'pointer' : '';
+          }
         });
       });
     })();
@@ -226,6 +220,87 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
     // Including them here would re-create the map on every tap.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lat, lng, showZoom]);
+
+  // Maintain a GeoJSON source for draw-mode vertices + edges
+  useEffect(() => {
+    const map = mapRef.current as unknown as {
+      getSource?: (id: string) => { setData: (d: unknown) => void } | undefined;
+      addSource?: (id: string, s: unknown) => void;
+      addLayer?: (layer: unknown) => void;
+    } | null;
+    if (!map?.getSource) return;
+    if (!map.getSource('draw')) {
+      map.addSource?.('draw', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer?.({
+        id: 'draw-line',
+        type: 'line',
+        source: 'draw',
+        filter: ['==', '$type', 'LineString'],
+        paint: {
+          'line-color': '#f19342',
+          'line-width': 3,
+          'line-dasharray': [1, 1.5],
+        },
+      });
+      map.addLayer?.({
+        id: 'draw-fill',
+        type: 'fill',
+        source: 'draw',
+        filter: ['==', '$type', 'Polygon'],
+        paint: {
+          'fill-color': '#f19342',
+          'fill-opacity': 0.2,
+        },
+      });
+      map.addLayer?.({
+        id: 'draw-points',
+        type: 'circle',
+        source: 'draw',
+        filter: ['==', '$type', 'Point'],
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#f19342',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
+      });
+    }
+    const src = map.getSource('draw');
+    if (!src) return;
+    const coordsLngLat = drawPoints.map((p) => [p.lng, p.lat]);
+    const features: unknown[] = drawPoints.map((p, i) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+      properties: { idx: i },
+    }));
+    if (drawPoints.length >= 2) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates:
+            drawPoints.length >= 3
+              ? [...coordsLngLat, coordsLngLat[0]]
+              : coordsLngLat,
+        },
+        properties: {},
+      });
+    }
+    if (drawPoints.length >= 3) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[...coordsLngLat, coordsLngLat[0]]],
+        },
+        properties: {},
+      });
+    }
+    src.setData({ type: 'FeatureCollection', features });
+  }, [drawPoints]);
 
   // Update selection highlight without re-creating the map
   useEffect(() => {
@@ -317,25 +392,88 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
       <div
         className="pointer-events-none absolute left-2 right-2 top-2 rounded-md px-3 py-1.5 text-[11px]"
         style={{
-          background: 'rgba(255,255,255,0.92)',
-          border: `1px solid var(--volans-border-strong)`,
+          background: 'rgba(255,255,255,0.95)',
+          border: `1px solid ${drawMode ? 'var(--volans-warning)' : 'var(--volans-border-strong)'}`,
           color: 'var(--volans-text)',
           backdropFilter: 'blur(4px)',
         }}
       >
-        {candidates.length === 0 ? (
+        {drawMode ? (
           <span>
-            📍 <strong>地図をタップ</strong>すると、その地点を中心に 15×20m の敷地を設定します
+            🖋 <strong>描画モード</strong> — 地図をタップで頂点追加
+            {drawPoints.length > 0 && (
+              <span className="ml-1" style={{ color: 'var(--volans-warning)' }}>
+                （現在 {drawPoints.length} 点）
+              </span>
+            )}
+          </span>
+        ) : candidates.length === 0 ? (
+          <span>
+            🖋 右下の <strong>描画モード</strong> で敷地の輪郭をなぞってください
           </span>
         ) : (
           <span>
-            🖱 筆界候補 <strong>{candidates.length}</strong> 件 — 青枠タップで選択 / 空地タップで手動配置
+            🖱 筆界候補 <strong>{candidates.length}</strong> 件 — 青枠タップで選択
             {selectedIdx >= 0 && (
               <span className="ml-1" style={{ color: 'var(--volans-success)' }}>
                 （選択中: {candidates[selectedIdx]?.chiban ?? '—'}）
               </span>
             )}
           </span>
+        )}
+      </div>
+
+      {/* Draw-mode controls (floating, bottom-right) */}
+      <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5">
+        {!drawMode ? (
+          <button
+            type="button"
+            onClick={() => setDrawMode(true)}
+            className="volans-btn-press flex items-center gap-1 overflow-hidden rounded-full px-3 py-1.5 text-[11px] font-medium shadow-md"
+            style={{
+              background: 'var(--volans-surface)',
+              border: `1px solid var(--volans-border-strong)`,
+              color: 'var(--volans-text)',
+            }}
+          >
+            🖋 描画モード
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={cancelDrawing}
+              className="volans-btn-press rounded-full px-3 py-1.5 text-[11px] font-medium shadow-md"
+              style={{
+                background: 'var(--volans-surface)',
+                border: `1px solid var(--volans-border-strong)`,
+                color: 'var(--volans-muted)',
+              }}
+            >
+              キャンセル
+            </button>
+            <button
+              type="button"
+              onClick={() => setDrawPoints((prev) => prev.slice(0, -1))}
+              disabled={drawPoints.length === 0}
+              className="volans-btn-press rounded-full px-3 py-1.5 text-[11px] font-medium shadow-md disabled:opacity-50"
+              style={{
+                background: 'var(--volans-surface)',
+                border: `1px solid var(--volans-border-strong)`,
+                color: 'var(--volans-text)',
+              }}
+            >
+              ↶ 1点戻す
+            </button>
+            <button
+              type="button"
+              onClick={commitDrawing}
+              disabled={drawPoints.length < 3}
+              className="volans-btn-press volans-btn-primary rounded-full px-3 py-1.5 text-[11px] font-semibold shadow-md disabled:opacity-50"
+            >
+              ✓ 確定 ({drawPoints.length})
+            </button>
+          </div>
         )}
       </div>
 
