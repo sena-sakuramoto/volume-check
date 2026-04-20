@@ -19,6 +19,7 @@ import { useVolumeCalculation } from '@/hooks/useVolumeCalculation';
 import { useSkyAnalysis } from '@/hooks/useSkyAnalysis';
 import { useSkyOptimization } from '@/hooks/useSkyOptimization';
 import { hapticConfirm } from '@/lib/haptic';
+import { setRippleOrigin } from '@/lib/button-press';
 
 const DISTRICT_LABELS: Record<string, string> = {
   第一種低層住居専用地域: '第一種低層住居',
@@ -228,9 +229,9 @@ export default function MobileInputPage() {
             />
             <button
               onClick={onSearch}
+              onPointerDown={setRippleOrigin}
               disabled={busy || !localAddress.trim()}
-              className="flex shrink-0 items-center gap-1 rounded-md px-3 py-2 text-[11px] font-medium text-white disabled:opacity-50"
-              style={{ background: 'var(--volans-primary)' }}
+              className="volans-btn-press volans-btn-primary flex shrink-0 items-center gap-1 overflow-hidden rounded-md px-3 py-2 text-[11px] font-medium"
             >
               {busy ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -260,22 +261,37 @@ export default function MobileInputPage() {
             </div>
           )}
 
-          <div className="mt-1">
-            <div
-              className="mb-1.5 text-[10px] font-semibold"
-              style={{ color: 'var(--volans-muted)' }}
-            >
-              地図（筆界をタップで選択）
+          <div className="mt-2">
+            <div className="mb-1.5 flex items-center justify-between">
+              <div
+                className="text-[11px] font-semibold"
+                style={{ color: 'var(--volans-text)' }}
+              >
+                地図で筆界を選択
+              </div>
+              {store.parcelCandidates.length > 0 && (
+                <div
+                  className="text-[10px]"
+                  style={{ color: 'var(--volans-muted)' }}
+                >
+                  候補 {store.parcelCandidates.length} 件
+                </div>
+              )}
             </div>
-            <VolansMap height={200} />
+            {/* Full-viewport-width, tall enough to actually see parcel
+             *  boundaries. 420px ≈ 46% of a 915px Pixel 7 viewport — in
+             *  line with Google Maps / Apple Maps "location picker" heights.
+             *  Users complained the previous 200px was unusable for
+             *  identifying lots. */}
+            <VolansMap height={420} showZoom />
           </div>
 
-          <div className="mt-1">
+          <div className="mt-3">
             <div
               className="mb-1.5 text-[10px] font-semibold"
               style={{ color: 'var(--volans-muted)' }}
             >
-              敷地図プレビュー（選択された敷地）
+              選択中の敷地プレビュー
             </div>
             <SitePreview site={store.site} />
           </div>
@@ -416,12 +432,9 @@ export default function MobileInputPage() {
 
         <button
           onClick={onRun}
+          onPointerDown={setRippleOrigin}
           disabled={busy || progressOpen}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-3 text-[13px] font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
-          style={{
-            background: 'var(--volans-primary)',
-            boxShadow: '0 8px 18px rgba(59,109,225,0.3)',
-          }}
+          className="volans-btn-press volans-btn-primary mt-2 flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg py-3 text-[13px] font-semibold"
         >
           {(busy || progressOpen) && <Loader2 className="h-4 w-4 animate-spin" />}
           {progressOpen ? '解析中…' : '解析を実行'}

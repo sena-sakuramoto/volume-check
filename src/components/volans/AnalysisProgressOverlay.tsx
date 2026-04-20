@@ -1,6 +1,7 @@
 'use client';
 
 import { CheckCircle2, Loader2 } from 'lucide-react';
+import { setRippleOrigin } from '@/lib/button-press';
 
 export type ProgressStepState = 'pending' | 'running' | 'done' | 'error';
 
@@ -115,8 +116,8 @@ export function AnalysisProgressOverlay({
         {(allDone || error) && onDismiss && (
           <button
             onClick={onDismiss}
-            className="mt-4 w-full rounded-md py-2 text-[12px] font-medium text-white transition-colors hover:brightness-110"
-            style={{ background: 'var(--volans-primary)' }}
+            onPointerDown={setRippleOrigin}
+            className="volans-btn-press volans-btn-primary mt-4 w-full overflow-hidden rounded-md py-2 text-[12px] font-medium"
           >
             {allDone ? '結果を開く' : '閉じる'}
           </button>

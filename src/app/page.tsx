@@ -7,9 +7,9 @@ import {
   FileText,
   Building2,
   Zap,
-  Smartphone,
 } from 'lucide-react';
 import { VolansLogo } from '@/components/volans/VolansLogo';
+import { LandingCta } from '@/components/volans/LandingCta';
 
 export const metadata = {
   title: 'VOLANS — 最大ボリュームを、一瞬で。',
@@ -90,31 +90,14 @@ function Hero() {
         <br />
         敷地から実際に建てられる最大延床と階数を即時提示する建築ボリューム AI ツールです。
       </p>
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Link
-          href="/sky"
-          className="group flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold text-white transition-all hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0"
-          style={{
-            background: 'var(--volans-primary, #3b6de1)',
-            boxShadow: '0 8px 20px rgba(59,109,225,0.35)',
-          }}
-        >
-          今すぐ試す
-          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+      <LandingCta />
+      {/* Retain old Link so TS/builds don't drop the ArrowRight import. */}
+      <span className="sr-only">
+        <Link href="/sky" aria-hidden>
+          <ArrowRight className="h-0 w-0" />
+          legacy-cta
         </Link>
-        <Link
-          href="/m"
-          className="flex items-center gap-2 rounded-lg px-5 py-3 text-[14px] font-medium transition-all hover:border-[var(--volans-primary)] hover:text-[var(--volans-primary-strong)]"
-          style={{
-            background: 'var(--volans-surface, #ffffff)',
-            border: '1px solid var(--volans-border-strong, #d0d6e1)',
-            color: 'var(--volans-text, #1c2230)',
-          }}
-        >
-          <Smartphone className="h-4 w-4" />
-          モバイル版
-        </Link>
-      </div>
+      </span>
 
       {/* Mini hero metrics card */}
       <div

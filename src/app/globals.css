@@ -140,6 +140,114 @@
   }
 }
 
+/* ============================================================
+ * Button press feedback — shared tactile style
+ * ============================================================
+ * References: Apple HIG "Buttons" (press-down state), Material Design 3
+ * state layer, Linear/Vercel button micro-interactions.
+ *
+ * Design goals per docs/ui-principles.md:
+ *  - 原則7「派手より楽」: feedback must be clear but not theatrical
+ *  - 原則12「10msの削減」: press transition is fast; release is slower
+ *    (bounce-back) so the "release" itself communicates commitment.
+ *
+ * Usage:
+ *   <button class="volans-btn-press ...">...</button>
+ *   - Primary CTAs: add `volans-btn-primary` for the colored glow.
+ *   - Secondary / icon buttons: just `volans-btn-press`.
+ */
+.volans-btn-press {
+  position: relative;
+  transition:
+    transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter   150ms ease-out,
+    box-shadow 150ms ease-out;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.volans-btn-press:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.volans-btn-press:active:not(:disabled) {
+  transform: scale(0.94) translateY(1px);
+  filter: brightness(0.90);
+  /* press transition is snappy (80ms) so the depress reads as instant */
+  transition:
+    transform 80ms ease-out,
+    filter   60ms ease-out,
+    box-shadow 80ms ease-out;
+}
+.volans-btn-press:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Primary tone: strong drop shadow that collapses on press */
+.volans-btn-primary {
+  background: var(--volans-primary);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(59, 109, 225, 0.32);
+}
+.volans-btn-primary:active:not(:disabled) {
+  box-shadow: 0 2px 6px rgba(59, 109, 225, 0.30);
+}
+
+/* Secondary tone: surface card with a subtle shadow */
+.volans-btn-secondary {
+  background: var(--volans-surface);
+  color: var(--volans-text);
+  border: 1px solid var(--volans-border-strong);
+  box-shadow: 0 1px 2px rgba(28, 34, 48, 0.04);
+}
+.volans-btn-secondary:active:not(:disabled) {
+  box-shadow: 0 0 0 transparent;
+}
+
+/* Dark mode tweak so the shadow stays visible on dark backgrounds */
+html[data-theme="dark"] .volans-btn-primary {
+  box-shadow: 0 8px 20px rgba(106, 147, 255, 0.45);
+}
+html[data-theme="dark"] .volans-btn-primary:active:not(:disabled) {
+  box-shadow: 0 2px 6px rgba(106, 147, 255, 0.35);
+}
+
+/* Ripple — a one-shot expanding disc at click origin. Uses a CSS custom
+ * property --ripple-x / --ripple-y so callers can set the origin in JS;
+ * falls back to center when not set. */
+.volans-btn-press::after {
+  content: "";
+  position: absolute;
+  top: var(--ripple-y, 50%);
+  left: var(--ripple-x, 50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(1);
+}
+.volans-btn-press:active::after {
+  animation: volans-ripple 420ms ease-out;
+}
+@keyframes volans-ripple {
+  0%   { opacity: 0.30; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0;    transform: translate(-50%, -50%) scale(80); }
+}
+
+/* Reduced-motion: disable the scale + ripple so the user only sees a
+ * color darken on press. */
+@media (prefers-reduced-motion: reduce) {
+  .volans-btn-press,
+  .volans-btn-press:active:not(:disabled) {
+    transform: none !important;
+  }
+  .volans-btn-press:active::after {
+    animation: none !important;
+  }
+}
+
 /* Screen-reader only (used for skip-link before focus) */
 .sr-only-focusable {
   position: absolute;
