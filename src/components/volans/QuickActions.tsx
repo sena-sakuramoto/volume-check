@@ -34,10 +34,10 @@ export function QuickActions() {
             <Link
               key={a.id}
               href={href}
-              className="flex items-start gap-2 rounded-md px-2 py-2 text-left transition hover:bg-slate-50"
+              className="group flex items-start gap-2 rounded-md px-2 py-2 text-left transition-all hover:bg-slate-50 hover:translate-x-0.5"
             >
               <span
-                className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded"
+                className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded transition-colors group-hover:bg-[var(--volans-primary)] group-hover:text-white"
                 style={{
                   background: 'var(--volans-primary-soft)',
                   color: 'var(--volans-primary)',
@@ -60,7 +60,7 @@ export function QuickActions() {
                 </span>
               </span>
               <ChevronRight
-                className="mt-1 h-3.5 w-3.5 shrink-0"
+                className="mt-1 h-3.5 w-3.5 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--volans-primary)]"
                 style={{ color: 'var(--volans-muted)' }}
               />
             </Link>

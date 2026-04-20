@@ -61,8 +61,12 @@ function Card({
   const s = toneStyle[tone];
   return (
     <div
-      className="flex flex-col rounded-xl p-4"
-      style={{ background: s.bg, border: `1px solid ${s.border}` }}
+      className="flex flex-col rounded-xl p-4 transition-shadow hover:shadow-md"
+      style={{
+        background: s.bg,
+        border: `1px solid ${s.border}`,
+        boxShadow: '0 1px 2px rgba(28,34,48,0.04)',
+      }}
     >
       <div className="flex items-center justify-between">
         <span
@@ -103,7 +107,7 @@ function Card({
       </div>
       <Link
         href={href}
-        className="mt-3 rounded-md py-1.5 text-center text-[11px] font-medium transition hover:brightness-95"
+        className="group mt-3 flex items-center justify-center gap-1 rounded-md py-1.5 text-center text-[11px] font-medium transition-all hover:brightness-95 hover:border-[var(--volans-text-soft)]"
         style={{
           background: 'var(--volans-surface)',
           border: `1px solid ${s.border}`,
@@ -111,6 +115,12 @@ function Card({
         }}
       >
         {cta}
+        <span
+          className="transition-transform group-hover:translate-x-0.5"
+          style={{ color: s.accent }}
+        >
+          →
+        </span>
       </Link>
     </div>
   );

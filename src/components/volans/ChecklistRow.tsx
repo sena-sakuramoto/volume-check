@@ -39,11 +39,11 @@ export function ChecklistRow({ checks }: ChecklistRowProps = {}) {
       </div>
       <Link
         href="/m/compare"
-        className="flex shrink-0 items-center gap-0.5 text-[11px]"
+        className="group flex shrink-0 items-center gap-0.5 text-[11px] transition-colors hover:text-[var(--volans-primary-strong)]"
         style={{ color: 'var(--volans-primary)' }}
       >
         詳細一覧
-        <ChevronRight className="h-3.5 w-3.5" />
+        <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
       </Link>
     </div>
   );

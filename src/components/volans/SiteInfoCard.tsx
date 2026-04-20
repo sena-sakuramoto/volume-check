@@ -47,7 +47,7 @@ export function SiteInfoCard({
         </div>
         <Link
           href="/m/input"
-          className="text-[11px]"
+          className="rounded-md px-1.5 py-0.5 text-[11px] transition-colors hover:bg-[var(--volans-primary-soft)]"
           style={{ color: 'var(--volans-primary)' }}
         >
           編集
@@ -68,11 +68,11 @@ export function SiteInfoCard({
       </div>
       <Link
         href="/m/input"
-        className="mt-3 flex items-center gap-0.5 text-[11px]"
+        className="group mt-3 flex items-center gap-0.5 text-[11px] transition-colors hover:text-[var(--volans-primary-strong)]"
         style={{ color: 'var(--volans-primary)' }}
       >
         敷地・法規データを確認
-        <ChevronRight className="h-3 w-3" />
+        <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
       </Link>
     </div>
   );
