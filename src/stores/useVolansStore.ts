@@ -446,10 +446,17 @@ export const useVolansStore = create<VolansStore>()(
   ),
 );
 
-/** Formatted updatedAt for display (YYYY/MM/DD HH:mm) */
+/**
+ * Formatted updatedAt for display (YYYY/MM/DD HH:mm).
+ *
+ * Uses getUTC*() to keep SSR (UTC in Cloud Run) and CSR (user local, e.g.
+ * JST = UTC+9) rendering the same text. With local-tz methods, the ISO
+ * literal `2026-04-17T14:30:00.000Z` would render as "14:30" on the server
+ * and "23:30" in the browser, which trips React hydration.
+ */
 export function formatUpdatedAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getUTCFullYear()}/${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
