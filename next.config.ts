@@ -7,6 +7,25 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react', '@phosphor-icons/react'],
   },
+  async headers() {
+    // Conservative baseline security headers. Avoid CSP here — the app loads
+    // Mapbox/maplibre tiles, Firebase Auth popups, and inline styles from
+    // three.js; a strict CSP would need a full allowlist audit first.
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(self)',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
