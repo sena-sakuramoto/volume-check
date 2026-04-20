@@ -96,13 +96,16 @@ export default function VolansSkyPage() {
 
   return (
     <div
-      className="flex h-screen flex-col overflow-hidden"
+      className="volans-page flex h-screen flex-col overflow-hidden"
       style={{
         background: 'var(--volans-bg)',
         color: 'var(--volans-text)',
         fontFamily: 'var(--font-body), "Noto Sans JP", sans-serif',
       }}
     >
+      <a href="#main" className="sr-only-focusable">
+        メインコンテンツへスキップ
+      </a>
       <HeaderBar
         activeStep={3}
         projectName={display.projectName}
@@ -115,7 +118,7 @@ export default function VolansSkyPage() {
       <div className="flex flex-1 overflow-hidden">
         <LeftNav />
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main id="main" className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex flex-1 min-h-0 gap-3 overflow-hidden p-3">
             {/* Center: 3D + summary + checklist */}
             <section className="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden">

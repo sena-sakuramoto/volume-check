@@ -14,7 +14,12 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
         fontFamily: 'var(--font-body), "Noto Sans JP", sans-serif',
       }}
     >
-      {children}
+      <a href="#main" className="sr-only-focusable">
+        メインコンテンツへスキップ
+      </a>
+      <main id="main" className="volans-page">
+        {children}
+      </main>
       <MobileBottomNav />
     </div>
   );

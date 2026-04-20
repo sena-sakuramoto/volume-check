@@ -11,6 +11,7 @@ import { DxfBoundaryPicker } from '@/components/volans/DxfBoundaryPicker';
 import { OcrBoundaryPicker } from '@/components/volans/OcrBoundaryPicker';
 import { VolansMap } from '@/components/volans/VolansMap';
 import { useVolansStore } from '@/stores/useVolansStore';
+import { hapticConfirm } from '@/lib/haptic';
 
 const DISTRICT_LABELS: Record<string, string> = {
   第一種低層住居専用地域: '第一種低層住居',
@@ -58,6 +59,7 @@ export default function MobileInputPage() {
 
   async function onRun() {
     setBusy(true);
+    hapticConfirm();
     await useVolansStore.getState().runAnalysis();
     setBusy(false);
     router.push('/m');

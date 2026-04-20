@@ -146,13 +146,7 @@ export default function MobileAIPage() {
           <div className="flex gap-2">
             <Avatar />
             <Bubble>
-              <div
-                className="flex items-center gap-2 text-[12px]"
-                style={{ color: 'var(--volans-muted)' }}
-              >
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                考えています…
-              </div>
+              <TypingDots />
             </Bubble>
           </div>
         )}
@@ -213,13 +207,30 @@ function Avatar() {
 function Bubble({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="max-w-[80%] rounded-2xl rounded-tl-sm px-3 py-2"
+      className="max-w-[80%] rounded-2xl rounded-tl-sm px-3 py-2 volans-msg-in"
       style={{
         background: 'var(--volans-surface)',
         border: `1px solid var(--volans-border)`,
       }}
     >
       {children}
+    </div>
+  );
+}
+
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1 px-0.5 py-1" aria-label="AI が応答を生成中">
+      {[0, 150, 300].map((delay) => (
+        <span
+          key={delay}
+          className="h-1.5 w-1.5 rounded-full"
+          style={{
+            background: 'var(--volans-muted)',
+            animation: `volans-typing 1s ${delay}ms infinite ease-in-out`,
+          }}
+        />
+      ))}
     </div>
   );
 }

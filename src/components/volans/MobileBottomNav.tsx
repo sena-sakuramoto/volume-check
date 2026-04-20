@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LayoutDashboard, FolderOpen, Plus, BarChart3, Menu } from 'lucide-react';
+import { hapticTap } from '@/lib/haptic';
 
 type NavItem = {
   href: string;
@@ -39,6 +40,7 @@ export function MobileBottomNav() {
             <Link
               key={it.href}
               href={it.href}
+              onClick={() => hapticTap(14)}
               className="-mt-5 grid h-12 w-12 place-items-center rounded-full text-white shadow-lg transition-transform active:scale-95"
               style={{
                 background: 'var(--volans-primary)',

@@ -162,15 +162,54 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
   if (lat === null || lng === null) {
     return (
       <div
-        className="grid place-items-center rounded-lg text-[11px]"
+        className="relative overflow-hidden rounded-lg"
         style={{
           height,
-          background: 'var(--volans-surface-alt)',
+          background:
+            'linear-gradient(135deg, var(--volans-surface-alt) 0%, var(--volans-surface) 100%)',
           border: `1px solid var(--volans-border)`,
-          color: 'var(--volans-muted)',
         }}
       >
-        住所検索で地図を読み込みます
+        {/* subtle grid backdrop */}
+        <svg
+          className="absolute inset-0 h-full w-full"
+          viewBox="0 0 400 220"
+          preserveAspectRatio="xMidYMid slice"
+          aria-hidden
+        >
+          <defs>
+            <pattern id="volans-map-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+              <path d="M 24 0 L 0 0 0 24" fill="none" stroke="var(--volans-border)" strokeWidth="0.5" />
+            </pattern>
+          </defs>
+          <rect width="400" height="220" fill="url(#volans-map-grid)" />
+          {/* sample parcel silhouette + road */}
+          <g opacity="0.35">
+            <polygon
+              points="160,80 240,75 250,145 170,150"
+              fill="var(--volans-primary-soft)"
+              stroke="var(--volans-primary)"
+              strokeWidth="1"
+            />
+            <line x1="0" y1="170" x2="400" y2="165" stroke="var(--volans-border-strong)" strokeWidth="6" strokeLinecap="round" />
+          </g>
+          {/* compass */}
+          <g transform="translate(360,30)" opacity="0.5">
+            <circle r="14" fill="none" stroke="var(--volans-border-strong)" strokeWidth="1" />
+            <polygon points="0,-10 3,0 0,10 -3,0" fill="var(--volans-primary)" />
+            <text y="-16" textAnchor="middle" fontSize="8" fill="var(--volans-muted)">
+              N
+            </text>
+          </g>
+        </svg>
+        <div className="relative z-10 flex h-full flex-col items-center justify-center gap-1 px-4 text-center">
+          <div className="text-[12px] font-medium" style={{ color: 'var(--volans-text)' }}>
+            住所を入力すると地図が表示されます
+          </div>
+          <div className="text-[10px]" style={{ color: 'var(--volans-muted)' }}>
+            上の検索ボックスに住所・地番を入力 → 検索
+          </div>
+        </div>
       </div>
     );
   }

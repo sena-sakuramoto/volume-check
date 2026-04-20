@@ -26,7 +26,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 type Item = {
   id: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   href?: string;
   /** scroll to this DOM id on the current page (opt-in highlight) */
   scrollTo?: string;
@@ -123,12 +123,13 @@ export function LeftNav() {
       background: isActive ? 'var(--volans-primary-soft)' : 'transparent',
       color: isActive ? 'var(--volans-primary-strong)' : 'var(--volans-text-soft)',
       fontWeight: isActive ? 600 : 400,
+      borderLeft: isActive ? `3px solid var(--volans-primary)` : '3px solid transparent',
     } as const;
     const className =
-      'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] transition hover:bg-slate-50';
+      'flex items-center gap-2 rounded-r-md px-2.5 py-1.5 text-[12px] transition-all hover:bg-slate-50 hover:text-[var(--volans-text)]';
     const content = (
       <>
-        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: isActive ? 'var(--volans-primary)' : undefined }} />
         {!collapsed && <span className="truncate">{item.label}</span>}
       </>
     );
@@ -172,12 +173,19 @@ export function LeftNav() {
         transition: 'width 160ms ease',
       }}
     >
-      <div className="flex flex-col gap-4 px-2">
-        {SECTIONS.map((s) => (
+      <div className="flex flex-col gap-1 px-2">
+        {SECTIONS.map((s, idx) => (
           <div key={s.heading || 'root'} className="flex flex-col gap-0.5">
+            {idx > 0 && !collapsed && (
+              <div
+                className="mx-2 my-1.5 h-px"
+                style={{ background: 'var(--volans-border)' }}
+                aria-hidden
+              />
+            )}
             {!collapsed && s.heading && (
               <div
-                className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider"
+                className="px-2 pb-1 pt-1 text-[9px] font-semibold uppercase tracking-[0.1em]"
                 style={{ color: 'var(--volans-muted)' }}
               >
                 {s.heading}

@@ -6,6 +6,7 @@ import { StepIndicator } from './StepIndicator';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { ShareLinkButton } from './ShareLinkButton';
 import { AuthBadge } from './AuthBadge';
+import { ThemeToggle } from './ThemeToggle';
 import { VOLANS_DEMO } from '@/lib/volans-demo';
 
 interface HeaderBarProps {
@@ -90,6 +91,7 @@ export function HeaderBar({
         </button>
         <ShareLinkButton />
         <ProjectSwitcher />
+        <ThemeToggle />
         <AuthBadge />
       </div>
     </header>
