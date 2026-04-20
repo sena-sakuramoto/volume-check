@@ -49,17 +49,28 @@ export function ParcelMap({
             version: 8,
             glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
             sources: {
-              osm: {
+              base: {
                 type: 'raster',
-                tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                // CartoDB Positron (CORS-enabled OSM-derived tiles). The
+                // openstreetmap.org CDN blocks fetch() cross-origin and
+                // breaks MapLibre's async tile pipeline.
+                tiles: [
+                  'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                  'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                  'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                  'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                ],
                 tileSize: 256,
-                attribution: '© OpenStreetMap contributors',
+                maxzoom: 19,
+                attribution:
+                  '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>',
               },
             },
-            layers: [{ id: 'osm-tiles', type: 'raster', source: 'osm' }],
+            layers: [{ id: 'base-tiles', type: 'raster', source: 'base' }],
           },
           center: [lng, lat],
           zoom: 17,
+          maxZoom: 19,
         });
 
         new maplibregl.Marker({ color: '#ef4444' }).setLngLat([lng, lat]).addTo(map);

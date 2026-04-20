@@ -37,17 +37,28 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
           version: 8,
           glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
           sources: {
-            osm: {
+            base: {
               type: 'raster',
-              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+              // CartoDB Positron — raster OSM-derived tiles with CORS enabled
+              // (the standard tile.openstreetmap.org CDN blocks fetch() from
+              // other origins and breaks MapLibre's async tile loader).
+              tiles: [
+                'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+              ],
               tileSize: 256,
-              attribution: '© OpenStreetMap contributors',
+              maxzoom: 19,
+              attribution:
+                '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>',
             },
           },
-          layers: [{ id: 'osm-tiles', type: 'raster', source: 'osm' }],
+          layers: [{ id: 'base-tiles', type: 'raster', source: 'base' }],
         },
         center: [lng, lat],
         zoom: 17.5,
+        maxZoom: 19,
         attributionControl: { compact: true },
       });
       if (showZoom) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
