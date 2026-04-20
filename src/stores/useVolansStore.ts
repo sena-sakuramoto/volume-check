@@ -91,7 +91,10 @@ const INITIAL: VolansProjectState = {
   zoning: { ...DEMO_ZONING, district: '商業地域', coverageRatio: 0.8, floorAreaRatio: 6.0 },
   latitude: 35.68,
   floorHeights: [4.2, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6],
-  updatedAt: new Date().toISOString(),
+  // Fixed literal so SSR and CSR hydrate identically. Real set* actions
+  // overwrite this with new Date().toISOString() on user edits. Matches
+  // the canonical demo timestamp in docs/ui-spec-volans.md §0.
+  updatedAt: '2026-04-17T14:30:00.000Z',
   status: 'idle',
   error: null,
   lastRunAt: null,
