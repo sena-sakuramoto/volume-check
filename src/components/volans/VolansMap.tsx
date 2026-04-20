@@ -1,12 +1,41 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useVolansStore } from '@/stores/useVolansStore';
+import { buildSiteFromGeoRing } from '@/lib/site-shape';
 
 interface VolansMapProps {
   height?: number;
   /** Show zoom controls */
   showZoom?: boolean;
+}
+
+/**
+ * Build a rectangular site (width × depth, meters) centered on lat/lng,
+ * aligned north-up. Returns a 4-vertex ring in GeoPoint order for
+ * `buildSiteFromGeoRing` to project into local meters.
+ */
+function geoRectangleAround(
+  lat: number,
+  lng: number,
+  widthMeters: number,
+  depthMeters: number,
+): { lat: number; lng: number }[] {
+  const EARTH = 6378137;
+  const latRad = (lat * Math.PI) / 180;
+  const halfW = widthMeters / 2;
+  const halfD = depthMeters / 2;
+  // metersPerLng at this latitude
+  const mPerLat = (Math.PI * EARTH) / 180;
+  const mPerLng = mPerLat * Math.cos(latRad);
+  const dLat = halfD / mPerLat;
+  const dLng = halfW / mPerLng;
+  return [
+    { lat: lat - dLat, lng: lng - dLng },
+    { lat: lat - dLat, lng: lng + dLng },
+    { lat: lat + dLat, lng: lng + dLng },
+    { lat: lat + dLat, lng: lng - dLng },
+  ];
 }
 
 /**
@@ -21,6 +50,12 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
   const lng = useVolansStore((s) => s.lng);
   const candidates = useVolansStore((s) => s.parcelCandidates);
   const selectedIdx = useVolansStore((s) => s.selectedParcelIndex);
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2400);
+  }
 
   useEffect(() => {
     if (!containerRef.current || lat === null || lng === null) return;
@@ -131,6 +166,7 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
           const idx = (feat.properties as { idx?: number })?.idx;
           if (typeof idx === 'number') {
             useVolansStore.getState().selectParcel(idx);
+            showToast(`地番 ${candidates[idx]?.chiban ?? '—'} を選択`);
           }
         });
         map.on('mouseenter', 'parcels-fill', () => {
@@ -138,6 +174,41 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
         });
         map.on('mouseleave', 'parcels-fill', () => {
           map.getCanvas().style.cursor = '';
+        });
+
+        // Click anywhere on the map (not on a parcel) → drop a 15×20m site
+        // rectangle centered on the tap. Gives a usable fallback when the
+        // AMX parcel PMTiles don't cover this location (common in
+        // downtown / new developments).
+        map.on('click', (e: { lngLat: { lng: number; lat: number }; defaultPrevented?: boolean }) => {
+          // Skip if the click already hit a parcel — that handler above
+          // will win first by event propagation.
+          const hit = map.queryRenderedFeatures(
+            [
+              (e as unknown as { point: { x: number; y: number } }).point?.x ?? 0,
+              (e as unknown as { point: { x: number; y: number } }).point?.y ?? 0,
+            ] as unknown as [number, number],
+            { layers: ['parcels-fill'] },
+          );
+          if (hit && hit.length > 0) return;
+          const ring = geoRectangleAround(e.lngLat.lat, e.lngLat.lng, 15, 20);
+          const site = buildSiteFromGeoRing(ring);
+          if (site) {
+            useVolansStore.setState({
+              site,
+              lat: e.lngLat.lat,
+              lng: e.lngLat.lng,
+              updatedAt: new Date().toISOString(),
+            });
+            showToast('この地点に 15×20m の敷地を設定');
+          }
+        });
+        map.on('mousemove', (e: { point: { x: number; y: number } }) => {
+          const hit = map.queryRenderedFeatures(
+            [e.point.x, e.point.y] as unknown as [number, number],
+            { layers: ['parcels-fill'] },
+          );
+          map.getCanvas().style.cursor = hit && hit.length > 0 ? 'pointer' : 'crosshair';
         });
       });
     })();
@@ -253,12 +324,12 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
         }}
       >
         {candidates.length === 0 ? (
-          <span style={{ color: 'var(--volans-muted)' }}>
-            📍 この地点を中心に敷地を手動設定（下のプリセット参照）
+          <span>
+            📍 <strong>地図をタップ</strong>すると、その地点を中心に 15×20m の敷地を設定します
           </span>
         ) : (
           <span>
-            🖱 筆界候補 <strong>{candidates.length}</strong> 件 — 青枠タップで敷地を選択
+            🖱 筆界候補 <strong>{candidates.length}</strong> 件 — 青枠タップで選択 / 空地タップで手動配置
             {selectedIdx >= 0 && (
               <span className="ml-1" style={{ color: 'var(--volans-success)' }}>
                 （選択中: {candidates[selectedIdx]?.chiban ?? '—'}）
@@ -267,6 +338,19 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
           </span>
         )}
       </div>
+
+      {/* Toast — quick confirmation of map-tap action */}
+      {toast && (
+        <div
+          className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1.5 text-[11px] font-medium text-white volans-msg-in"
+          style={{
+            background: 'var(--volans-text)',
+            boxShadow: '0 8px 18px rgba(0,0,0,0.3)',
+          }}
+        >
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
