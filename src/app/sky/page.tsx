@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ChevronDown, Sun, Layers as LayersIcon } from 'lucide-react';
 import {
@@ -59,7 +58,6 @@ type RightTab = 'condition' | 'report';
 export default function VolansSkyPage() {
   const [viewReady, setViewReady] = useState(false);
   const [rightTab, setRightTab] = useState<RightTab>('condition');
-  const router = useRouter();
   useMultiTabSync();
 
   // Defer the 3D viewer mount to a microtask so we don't flash on hydration.
@@ -69,14 +67,19 @@ export default function VolansSkyPage() {
 
   // /sky is the ≥1024px layout per ui-spec-volans §7. Narrow viewports get
   // redirected to /m (mobile dashboard) to avoid the fixed-width panel
-  // overflow. Runs once on mount; user can still open the mobile version
-  // directly from bookmarks.
+  // overflow. Uses matchMedia so the check re-runs on viewport emulation
+  // changes (playwright, devtools rotate) — innerWidth alone was racing with
+  // device emulation in e2e runs.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (window.innerWidth < 1024) {
-      router.replace('/m');
-    }
-  }, [router]);
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const apply = () => {
+      if (mq.matches) window.location.replace('/m');
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   const storeSite = useVolansStore((s) => s.site);
   const storeRoads = useVolansStore((s) => s.roads);

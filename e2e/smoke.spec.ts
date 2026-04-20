@@ -8,26 +8,29 @@ test.describe('VOLANS smoke', () => {
     await expect(page.getByRole('link', { name: /今すぐ試す/ })).toBeVisible();
   });
 
-  test('landing CTA navigates to /sky', async ({ page }) => {
+  test('landing CTA navigates to /sky (or /m on mobile)', async ({ page, viewport }) => {
+    const isDesktop = (viewport?.width ?? 0) >= 1024;
     await page.goto('/');
     await page.getByRole('link', { name: /今すぐ試す/ }).click();
-    await expect(page).toHaveURL(/\/sky$/);
-    await expect(page.getByText('解析結果サマリー')).toBeVisible();
-  });
-
-  test('/sky has VOLANS envelope metrics', async ({ page, viewport }) => {
-    // /sky is the ≥1024px layout per ui-spec-volans §7. On narrower viewports
-    // the page auto-redirects to /m, so we only assert the summary surface on
-    // desktop viewports.
-    const isDesktop = (viewport?.width ?? 0) >= 1024;
-    await page.goto('/sky');
     if (isDesktop) {
-      await expect(page.getByText(/延床面積/).first()).toBeVisible();
-      await expect(page.getByRole('button', { name: /天空率 最大化を実行/ })).toBeVisible();
+      await expect(page).toHaveURL(/\/sky$/);
+      await expect(page.getByText('解析結果サマリー')).toBeVisible();
     } else {
+      // /sky auto-redirects narrow viewports to /m per ui-spec-volans §7.
       await expect(page).toHaveURL(/\/m$/);
       await expect(page.getByText(/新宿区西新宿3丁目計画/)).toBeVisible();
     }
+  });
+
+  test('/sky has VOLANS envelope metrics', async ({ page, viewport }) => {
+    // /sky is the ≥1024px layout per ui-spec-volans §7. Narrow-viewport
+    // redirect is covered by the "landing CTA" test above; don't duplicate
+    // it here because the /sky → /m client-side redirect races with
+    // playwright's page.goto() when browser context is reused across tests.
+    test.skip((viewport?.width ?? 0) < 1024, '/sky is desktop-only; mobile path is tested via the CTA redirect');
+    await page.goto('/sky');
+    await expect(page.getByText(/延床面積/).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /天空率 最大化を実行/ })).toBeVisible();
   });
 
   test('/sky footer carries Article 56-7 citation', async ({ page, viewport }) => {
@@ -44,5 +47,15 @@ test.describe('VOLANS smoke', () => {
     await expect(page.getByText(/新宿区西新宿3丁目計画/)).toBeVisible();
     // bottom nav
     await expect(page.getByRole('link', { name: /ダッシュボード/ })).toBeVisible();
+  });
+
+  test('/api/health returns a JSON liveness payload', async ({ request }) => {
+    const resp = await request.get('/api/health');
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body.status).toBe('ok');
+    expect(body.service).toBe('volans-web');
+    expect(typeof body.uptimeSec).toBe('number');
+    expect(typeof body.bootedAt).toBe('string');
   });
 });
