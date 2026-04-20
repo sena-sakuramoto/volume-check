@@ -43,11 +43,13 @@ export interface VolansProjectState {
    * driving the volume check.
    *   - 'demo':     INITIAL demo polygon (default)
    *   - 'parcel':   chosen from NARO AMX parcel candidates (authoritative)
+   *   - 'building': estimated from OSM building footprint at the address
+   *                 (fallback when AMX has no coverage)
    *   - 'manual':   user drew / tapped on the map (best-effort)
    *   - 'dxf':      from DxfBoundaryPicker
    *   - 'ocr':      from OcrBoundaryPicker
    */
-  siteSource: 'demo' | 'parcel' | 'manual' | 'dxf' | 'ocr';
+  siteSource: 'demo' | 'parcel' | 'building' | 'manual' | 'dxf' | 'ocr';
 
   /** 天空率 optimisation result — set by searchMaxSkyVolume */
   skyMaxScale: number | null;
@@ -229,6 +231,7 @@ export const useVolansStore = create<VolansStore>()(
 
           const parcelCandidates: ParcelCandidate[] = [];
           let nextSite = current.site;
+          let nextSiteSource: VolansProjectState['siteSource'] = current.siteSource;
           let chosenRing: GeoPoint[] | null = null;
           if (parcelResp && parcelResp.ok) {
             const pr = (await parcelResp.json()) as {
@@ -261,9 +264,83 @@ export const useVolansStore = create<VolansStore>()(
                 const site = buildSiteFromGeoRing(pick.ring);
                 if (site) {
                   nextSite = site;
+                  nextSiteSource = 'parcel';
                   chosenRing = pick.ring;
                 }
               }
+            }
+          }
+
+          // If AMX parcel lookup gave us nothing, try the OSM-building
+          // fallback. Not a legal parcel, but a reasonable address-only
+          // estimate of the site footprint — marked explicitly as
+          // 'building' on the SiteSourceBadge.
+          if (!chosenRing) {
+            set({ progressLabel: '建物外形から敷地を推定中…' });
+            try {
+              const buildingsResp = await fetch('/api/nearby-buildings', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ lat: geo.lat, lng: geo.lng, radiusMeters: 80 }),
+              });
+              if (buildingsResp.ok) {
+                const bdata = (await buildingsResp.json()) as {
+                  buildings?: Array<{ ring: [number, number][]; height?: number }>;
+                };
+                const buildings = bdata.buildings ?? [];
+                // Pick the building containing the geocoded point if any;
+                // otherwise the nearest one (small radius = reasonable proxy).
+                const pointInRing = (pt: [number, number], ring: [number, number][]) => {
+                  let inside = false;
+                  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                    const [xi, yi] = ring[i];
+                    const [xj, yj] = ring[j];
+                    const intersects =
+                      (yi > pt[1]) !== (yj > pt[1]) &&
+                      pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi + 1e-12) + xi;
+                    if (intersects) inside = !inside;
+                  }
+                  return inside;
+                };
+                const p: [number, number] = [geo.lng, geo.lat];
+                let picked = buildings.find((b) => pointInRing(p, b.ring));
+                if (!picked && buildings.length > 0) {
+                  let best = buildings[0];
+                  let bestD = Infinity;
+                  for (const b of buildings) {
+                    // centroid distance
+                    let cx = 0, cy = 0;
+                    for (const [x, y] of b.ring) {
+                      cx += x;
+                      cy += y;
+                    }
+                    cx /= b.ring.length;
+                    cy /= b.ring.length;
+                    const dx = cx - geo.lng;
+                    const dy = cy - geo.lat;
+                    const d = dx * dx + dy * dy;
+                    if (d < bestD) {
+                      bestD = d;
+                      best = b;
+                    }
+                  }
+                  picked = best;
+                }
+                if (picked && picked.ring.length >= 3) {
+                  const ring: GeoPoint[] = picked.ring.map(([lngP, latP]) => ({
+                    lat: latP,
+                    lng: lngP,
+                  }));
+                  const site = buildSiteFromGeoRing(ring);
+                  if (site) {
+                    nextSite = site;
+                    nextSiteSource = 'building';
+                    chosenRing = ring;
+                  }
+                }
+              }
+            } catch {
+              // silent fail — keep manual/demo source
             }
           }
 
@@ -271,6 +348,7 @@ export const useVolansStore = create<VolansStore>()(
           set({
             zoning: nextZoning,
             site: nextSite,
+            siteSource: nextSiteSource,
             parcelCandidates,
             selectedParcelIndex: parcelCandidates.length > 0 ? 0 : -1,
             progressLabel: chosenRing ? '接道道路を推定中…' : null,

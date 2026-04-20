@@ -29,6 +29,13 @@ export function SiteSourceBadge({ compact = false }: { compact?: boolean }) {
       bg: 'var(--volans-success-soft)',
       icon: '✅',
     },
+    building: {
+      label: '建物外形推定',
+      detail: 'OpenStreetMap 建物フットプリント由来 — 敷地≒建物外形の概算、法的根拠なし',
+      color: 'var(--volans-warning)',
+      bg: 'var(--volans-warning-soft)',
+      icon: '🏢',
+    },
     manual: {
       label: '仮設定',
       detail: '地図上で手動描画 — 法的根拠なし、参考検討用',
