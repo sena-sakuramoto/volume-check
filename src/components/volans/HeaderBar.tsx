@@ -56,7 +56,7 @@ export function HeaderBar({
                 }
               }}
               aria-label="プロジェクト名を編集"
-              className="grid h-5 w-5 place-items-center rounded hover:bg-slate-100"
+              className="grid h-5 w-5 place-items-center rounded transition-colors hover:bg-slate-100 hover:text-[var(--volans-primary)]"
               style={{ color: 'var(--volans-muted)' }}
             >
               <Pencil className="h-3 w-3" />
@@ -78,7 +78,7 @@ export function HeaderBar({
       <div className="flex items-center gap-2">
         <button
           onClick={onExportPdf}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px]"
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] transition-all hover:border-[var(--volans-primary)] hover:text-[var(--volans-primary-strong)] active:scale-95"
           style={{
             background: 'var(--volans-surface)',
             border: `1px solid var(--volans-border-strong)`,

@@ -12,6 +12,7 @@ import {
 } from '@phosphor-icons/react';
 import { MobileHeader } from '@/components/volans/MobileHeader';
 import { SkyCheckPanel } from '@/components/volans/SkyCheckPanel';
+import { ViewerSkeleton } from '@/components/volans/ViewerSkeleton';
 import { useVolumeCalculation } from '@/hooks/useVolumeCalculation';
 import { useVolansResult } from '@/hooks/useVolansResult';
 import { useVolansStore } from '@/stores/useVolansStore';
@@ -20,14 +21,7 @@ const Viewer = dynamic(
   () => import('@/components/three/Viewer').then((m) => ({ default: m.Viewer })),
   {
     ssr: false,
-    loading: () => (
-      <div
-        className="grid h-full place-items-center text-[11px]"
-        style={{ color: 'var(--volans-muted)' }}
-      >
-        3D ビューを読み込み中…
-      </div>
-    ),
+    loading: () => <ViewerSkeleton />,
   },
 );
 

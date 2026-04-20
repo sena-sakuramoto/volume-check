@@ -15,6 +15,7 @@ import { useVolansResult } from '@/hooks/useVolansResult';
 import { useVolansStore } from '@/stores/useVolansStore';
 import { HeaderBar } from '@/components/volans/HeaderBar';
 import { LeftNav } from '@/components/volans/LeftNav';
+import { ViewerSkeleton } from '@/components/volans/ViewerSkeleton';
 import { SummaryCards } from '@/components/volans/SummaryCards';
 import { ChecklistRow } from '@/components/volans/ChecklistRow';
 import { SiteInfoCard } from '@/components/volans/SiteInfoCard';
@@ -42,14 +43,7 @@ const Viewer = dynamic(
   () => import('@/components/three/Viewer').then((m) => ({ default: m.Viewer })),
   {
     ssr: false,
-    loading: () => (
-      <div
-        className="grid h-full place-items-center text-[11px]"
-        style={{ color: 'var(--volans-muted)' }}
-      >
-        3D ビューを読み込み中…
-      </div>
-    ),
+    loading: () => <ViewerSkeleton />,
   },
 );
 

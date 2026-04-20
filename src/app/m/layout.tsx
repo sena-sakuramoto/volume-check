@@ -7,7 +7,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
   useMultiTabSync();
   return (
     <div
-      className="min-h-screen overflow-x-hidden pb-[64px]"
+      className="min-h-screen overflow-x-hidden pb-[88px]"
       style={{
         background: 'var(--volans-bg)',
         color: 'var(--volans-text)',

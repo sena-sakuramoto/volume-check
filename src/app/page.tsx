@@ -93,15 +93,18 @@ function Hero() {
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
         <Link
           href="/sky"
-          className="flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold text-white"
-          style={{ background: 'var(--volans-primary, #3b6de1)' }}
+          className="group flex items-center gap-2 rounded-lg px-6 py-3 text-[14px] font-semibold text-white transition-all hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0"
+          style={{
+            background: 'var(--volans-primary, #3b6de1)',
+            boxShadow: '0 8px 20px rgba(59,109,225,0.35)',
+          }}
         >
           今すぐ試す
-          <ArrowRight className="h-4 w-4" />
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </Link>
         <Link
           href="/m"
-          className="flex items-center gap-2 rounded-lg px-5 py-3 text-[14px] font-medium"
+          className="flex items-center gap-2 rounded-lg px-5 py-3 text-[14px] font-medium transition-all hover:border-[var(--volans-primary)] hover:text-[var(--volans-primary-strong)]"
           style={{
             background: 'var(--volans-surface, #ffffff)',
             border: '1px solid var(--volans-border-strong, #d0d6e1)',

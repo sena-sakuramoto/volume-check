@@ -28,6 +28,7 @@ export function MobileBottomNav() {
       style={{
         background: 'var(--volans-surface)',
         borderTop: `1px solid var(--volans-border)`,
+        boxShadow: '0 -6px 18px rgba(28,34,48,0.04)',
       }}
     >
       {ITEMS.map((it) => {
@@ -38,8 +39,11 @@ export function MobileBottomNav() {
             <Link
               key={it.href}
               href={it.href}
-              className="-mt-5 grid h-12 w-12 place-items-center rounded-full text-white shadow-md"
-              style={{ background: 'var(--volans-primary)' }}
+              className="-mt-5 grid h-12 w-12 place-items-center rounded-full text-white shadow-lg transition-transform active:scale-95"
+              style={{
+                background: 'var(--volans-primary)',
+                boxShadow: '0 6px 16px rgba(59,109,225,0.45)',
+              }}
               aria-label="新規"
             >
               <Icon className="h-5 w-5" />
@@ -50,13 +54,22 @@ export function MobileBottomNav() {
           <Link
             key={it.href}
             href={it.href}
-            className="flex flex-1 flex-col items-center justify-center gap-0.5"
+            className="flex flex-1 flex-col items-center justify-center gap-0.5 transition-colors"
             style={{
               color: active ? 'var(--volans-primary)' : 'var(--volans-muted)',
             }}
           >
-            <Icon className="h-4 w-4" />
-            <span className="text-[9px]">{it.label}</span>
+            <span
+              className="grid h-6 w-6 place-items-center rounded-full transition-colors"
+              style={{
+                background: active ? 'var(--volans-primary-soft)' : 'transparent',
+              }}
+            >
+              <Icon className="h-4 w-4" />
+            </span>
+            <span className="text-[9px]" style={{ fontWeight: active ? 600 : 400 }}>
+              {it.label}
+            </span>
           </Link>
         );
       })}

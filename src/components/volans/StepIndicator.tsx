@@ -22,20 +22,28 @@ export function StepIndicator({ activeId, compact = false }: StepIndicatorProps)
         const content = (
           <div
             className={[
-              'flex items-center gap-1.5 rounded-full px-3 py-1 transition cursor-pointer',
+              'flex items-center gap-1.5 rounded-full px-3 py-1 transition-all cursor-pointer hover:brightness-95',
               compact ? 'text-[10px]' : 'text-[11px]',
             ].join(' ')}
             style={{
-              background: active ? 'var(--volans-primary)' : 'transparent',
+              background: active
+                ? 'var(--volans-primary)'
+                : done
+                  ? 'var(--volans-primary-soft)'
+                  : 'transparent',
               color: active
                 ? '#ffffff'
                 : done
-                  ? 'var(--volans-text)'
+                  ? 'var(--volans-primary-strong)'
                   : 'var(--volans-muted)',
               border: active ? 'none' : `1px solid var(--volans-border)`,
+              boxShadow: active ? '0 2px 8px rgba(59,109,225,0.25)' : 'none',
             }}
           >
-            <span className="font-semibold tabular-nums">
+            <span
+              className="font-semibold tabular-nums"
+              style={{ opacity: done ? 0.8 : 1 }}
+            >
               {String(s.id).padStart(2, '0')}
             </span>
             <span>{s.label}</span>
@@ -46,8 +54,10 @@ export function StepIndicator({ activeId, compact = false }: StepIndicatorProps)
             {href ? <Link href={href}>{content}</Link> : content}
             {i < STEP_LABELS.length - 1 && (
               <span
-                className="inline-block h-px w-4"
-                style={{ background: 'var(--volans-border)' }}
+                className="inline-block h-px w-4 transition-colors"
+                style={{
+                  background: s.id < activeId ? 'var(--volans-primary)' : 'var(--volans-border)',
+                }}
               />
             )}
           </div>
