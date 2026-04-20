@@ -11,13 +11,18 @@ test.describe('VOLANS smoke', () => {
   test('landing CTA navigates to /sky (or /m on mobile)', async ({ page, viewport }) => {
     const isDesktop = (viewport?.width ?? 0) >= 1024;
     await page.goto('/');
-    await page.getByRole('link', { name: /今すぐ試す/ }).click();
+    // Wait for the CTA to actually hydrate before clicking. On the flaky
+    // mobile-chrome run, playwright fires click() while React is still
+    // swapping the SSR tree, and the click misses the client-bound handler.
+    const cta = page.getByRole('link', { name: /今すぐ試す/ });
+    await expect(cta).toBeVisible();
+    await cta.click();
     if (isDesktop) {
-      await expect(page).toHaveURL(/\/sky$/);
+      await page.waitForURL(/\/sky$/, { timeout: 10_000 });
       await expect(page.getByText('解析結果サマリー')).toBeVisible();
     } else {
       // /sky auto-redirects narrow viewports to /m per ui-spec-volans §7.
-      await expect(page).toHaveURL(/\/m$/);
+      await page.waitForURL(/\/m$/, { timeout: 10_000 });
       await expect(page.getByText(/新宿区西新宿3丁目計画/)).toBeVisible();
     }
   });

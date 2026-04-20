@@ -194,6 +194,53 @@ export default function MobileInputPage() {
             <SitePreview site={store.site} />
           </div>
 
+          {store.parcelCandidates.length === 0 && store.lat !== null && store.lng !== null && (
+            <div
+              className="mt-2 rounded-md p-2.5 text-[11px]"
+              style={{
+                background: 'var(--volans-warning-soft)',
+                border: `1px solid var(--volans-warning)`,
+              }}
+            >
+              <div className="font-medium" style={{ color: 'var(--volans-warning)' }}>
+                この地点の筆界データが取得できませんでした
+              </div>
+              <div className="mt-0.5" style={{ color: 'var(--volans-muted)' }}>
+                下の「敷地形状を編集」で手動調整するか、CAD (DXF) / 測量図画像を取り込めます。
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-1">
+                {[
+                  { w: 10, h: 15, label: '10×15m (150㎡)' },
+                  { w: 15, h: 20, label: '15×20m (300㎡)' },
+                  { w: 20, h: 25, label: '20×25m (500㎡)' },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    onClick={() => {
+                      useVolansStore.getState().setSiteFromCad(
+                        [
+                          { x: 0, y: 0 },
+                          { x: preset.w, y: 0 },
+                          { x: preset.w, y: preset.h },
+                          { x: 0, y: preset.h },
+                        ],
+                        { roadEdgeIndices: [[0, 1]], roadWidthDefault: 6 },
+                      );
+                    }}
+                    className="rounded px-1 py-1 text-[10px] font-medium transition-colors hover:brightness-95"
+                    style={{
+                      background: 'var(--volans-surface)',
+                      border: `1px solid var(--volans-border-strong)`,
+                      color: 'var(--volans-text)',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {store.parcelCandidates.length > 1 && (
             <div className="mt-2">
               <div

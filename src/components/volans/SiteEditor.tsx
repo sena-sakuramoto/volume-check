@@ -59,7 +59,12 @@ export function SiteEditor({ height = 260 }: SiteEditorProps) {
     return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
   }, [draft]);
 
-  const viewBox = `${bbox.minX} ${-bbox.maxY} ${bbox.maxX - bbox.minX} ${bbox.maxY - bbox.minY}`;
+  // Render with native SVG coords (y-down). Internal data uses y-up, so we
+  // flip on the way in and out rather than relying on a CSS `transform-
+  // origin` on the outer <g> (which React doesn't reliably apply to SVG
+  // transforms — that was why the editor canvas was rendering blank).
+  const viewBox = `${bbox.minX} ${bbox.minY} ${bbox.maxX - bbox.minX} ${bbox.maxY - bbox.minY}`;
+  const flipY = (y: number) => bbox.minY + bbox.maxY - y;
   const longEdge = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY);
   const r = longEdge * 0.018;
   const strokeW = longEdge * 0.006;
@@ -73,7 +78,9 @@ export function SiteEditor({ height = 260 }: SiteEditorProps) {
     const ctm = svgRef.current.getScreenCTM();
     if (!ctm) return null;
     const world = pt.matrixTransform(ctm.inverse());
-    return { x: world.x, y: -world.y };
+    // Convert SVG y-down → world y-up using the same flipY so pointer
+    // coordinates match the rendered handles.
+    return { x: world.x, y: bbox.minY + bbox.maxY - world.y };
   }
 
   function onVertexDown(i: number) {
@@ -237,67 +244,66 @@ export function SiteEditor({ height = 260 }: SiteEditorProps) {
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
       >
-        <g transform="scale(1,-1)" transform-origin="center">
-          <polygon
-            points={draft.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')}
-            fill="var(--volans-primary-soft)"
-            stroke="var(--volans-primary)"
-            strokeWidth={strokeW}
+        <polygon
+          points={draft.map((p) => `${p.x.toFixed(2)},${flipY(p.y).toFixed(2)}`).join(' ')}
+          fill="var(--volans-primary-soft)"
+          stroke="var(--volans-primary)"
+          strokeWidth={strokeW}
+        />
+
+        {/* edge midpoints with + */}
+        {draft.map((a, i) => {
+          const b = draft[(i + 1) % draft.length];
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 2;
+          const len = Math.hypot(b.x - a.x, b.y - a.y);
+          const myFlipped = flipY(my);
+          const angle = (Math.atan2(flipY(b.y) - flipY(a.y), b.x - a.x) * 180) / Math.PI;
+          return (
+            <g key={`edge-${i}`}>
+              <circle
+                cx={mx}
+                cy={myFlipped}
+                r={r * 0.7}
+                fill="var(--volans-surface)"
+                stroke="var(--volans-primary)"
+                strokeWidth={strokeW * 0.8}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  insertAt(i);
+                }}
+                style={{ cursor: 'pointer' }}
+              />
+              <text
+                x={mx}
+                y={myFlipped}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize={fontSize}
+                fill="var(--volans-text-soft)"
+                transform={`rotate(${angle}, ${mx}, ${myFlipped}) translate(0, ${-fontSize * 1.3})`}
+                pointerEvents="none"
+              >
+                {len.toFixed(2)}m
+              </text>
+            </g>
+          );
+        })}
+
+        {/* vertex handles */}
+        {draft.map((p, i) => (
+          <circle
+            key={`v-${i}`}
+            cx={p.x}
+            cy={flipY(p.y)}
+            r={r}
+            fill={i === selected ? 'var(--volans-warning)' : 'var(--volans-primary)'}
+            stroke="#ffffff"
+            strokeWidth={strokeW * 0.8}
+            onPointerDown={onVertexDown(i)}
+            style={{ cursor: 'grab', touchAction: 'none' }}
           />
-
-          {/* edge midpoints with + */}
-          {draft.map((a, i) => {
-            const b = draft[(i + 1) % draft.length];
-            const mx = (a.x + b.x) / 2;
-            const my = (a.y + b.y) / 2;
-            const len = Math.hypot(b.x - a.x, b.y - a.y);
-            const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-            return (
-              <g key={`edge-${i}`}>
-                <circle
-                  cx={mx}
-                  cy={my}
-                  r={r * 0.7}
-                  fill="var(--volans-surface)"
-                  stroke="var(--volans-primary)"
-                  strokeWidth={strokeW * 0.8}
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    insertAt(i);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                />
-                <text
-                  x={mx}
-                  y={-my}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fontSize={fontSize}
-                  fill="var(--volans-text-soft)"
-                  transform={`rotate(${-angle}, ${mx}, ${-my}) translate(0, ${fontSize * 1.3})`}
-                  pointerEvents="none"
-                >
-                  {len.toFixed(2)}m
-                </text>
-              </g>
-            );
-          })}
-
-          {/* vertex handles */}
-          {draft.map((p, i) => (
-            <circle
-              key={`v-${i}`}
-              cx={p.x}
-              cy={p.y}
-              r={r}
-              fill={i === selected ? 'var(--volans-warning)' : 'var(--volans-primary)'}
-              stroke="#ffffff"
-              strokeWidth={strokeW * 0.8}
-              onPointerDown={onVertexDown(i)}
-              style={{ cursor: 'grab', touchAction: 'none' }}
-            />
-          ))}
-        </g>
+        ))}
       </svg>
 
       <div className="flex items-center justify-between text-[10px]">
