@@ -32,8 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-# allow the sample template to be committed
+# Templates + production NEXT_PUBLIC_* values are OK to commit.
 !.env.example
+!.env.production
 
 # vercel
 .vercel
