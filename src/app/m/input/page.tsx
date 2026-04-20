@@ -10,7 +10,14 @@ import { RoadEditor } from '@/components/volans/RoadEditor';
 import { DxfBoundaryPicker } from '@/components/volans/DxfBoundaryPicker';
 import { OcrBoundaryPicker } from '@/components/volans/OcrBoundaryPicker';
 import { VolansMap } from '@/components/volans/VolansMap';
+import {
+  AnalysisProgressOverlay,
+  type ProgressStep,
+} from '@/components/volans/AnalysisProgressOverlay';
 import { useVolansStore } from '@/stores/useVolansStore';
+import { useVolumeCalculation } from '@/hooks/useVolumeCalculation';
+import { useSkyAnalysis } from '@/hooks/useSkyAnalysis';
+import { useSkyOptimization } from '@/hooks/useSkyOptimization';
 import { hapticConfirm } from '@/lib/haptic';
 
 const DISTRICT_LABELS: Record<string, string> = {
@@ -37,6 +44,20 @@ export default function MobileInputPage() {
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const progressLabel = useVolansStore((s) => s.progressLabel);
 
+  // Analysis pipeline state
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
+  const { volumeResult } = useVolumeCalculation({
+    site: store.site,
+    zoning: store.zoning,
+    roads: store.roads,
+    latitude: store.latitude,
+    floorHeights: store.floorHeights,
+  });
+  const skyAnalysis = useSkyAnalysis(volumeResult);
+  const skyOpt = useSkyOptimization(volumeResult);
+
   async function onSearch() {
     if (!localAddress.trim()) return;
     setBusy(true);
@@ -58,11 +79,76 @@ export default function MobileInputPage() {
   }
 
   async function onRun() {
-    setBusy(true);
     hapticConfirm();
-    await useVolansStore.getState().runAnalysis();
-    setBusy(false);
-    router.push('/m');
+    setProgressError(null);
+    setProgressOpen(true);
+
+    const mkSteps = (update: Partial<Record<string, ProgressStep['state']>> = {}): ProgressStep[] => {
+      const base: Array<Omit<ProgressStep, 'state'> & { initial: ProgressStep['state'] }> = [
+        { key: 'site',     label: '敷地形状を確定',         initial: 'pending' },
+        { key: 'volume',   label: '容積率・斜線制限を計算', initial: 'pending' },
+        { key: 'sky',      label: '天空率チェックを評価',   initial: 'pending' },
+        { key: 'optimize', label: '天空率でボリューム最大化', initial: 'pending' },
+        { key: 'done',     label: '結果を生成',             initial: 'pending' },
+      ];
+      return base.map((s) => ({
+        key: s.key,
+        label: s.label,
+        state: (update[s.key] ?? s.initial) as ProgressStep['state'],
+      }));
+    };
+
+    const running = (current: string, done: string[] = []) => {
+      const upd: Partial<Record<string, ProgressStep['state']>> = {};
+      done.forEach((k) => (upd[k] = 'done'));
+      upd[current] = 'running';
+      setProgressSteps(mkSteps(upd));
+    };
+
+    try {
+      running('site');
+      await new Promise((r) => setTimeout(r, 250));
+
+      running('volume', ['site']);
+      // volumeResult is already computed reactively above; just show progress.
+      await new Promise((r) => setTimeout(r, 250));
+      if (!volumeResult) {
+        throw new Error('ボリューム計算に失敗しました');
+      }
+
+      running('sky', ['site', 'volume']);
+      await skyAnalysis.run();
+      if (skyAnalysis.error) {
+        throw new Error(skyAnalysis.error);
+      }
+
+      running('optimize', ['site', 'volume', 'sky']);
+      await skyOpt.run();
+      if (skyOpt.error) {
+        // Optimization is best-effort; don't block the whole flow.
+        // The existing demo fallback still gives the user a result.
+      }
+
+      running('done', ['site', 'volume', 'sky', 'optimize']);
+      await useVolansStore.getState().runAnalysis();
+      await new Promise((r) => setTimeout(r, 300));
+
+      setProgressSteps(
+        mkSteps({ site: 'done', volume: 'done', sky: 'done', optimize: 'done', done: 'done' }),
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '解析に失敗しました';
+      setProgressError(msg);
+      setProgressSteps((curr) =>
+        curr.map((s) => (s.state === 'running' ? { ...s, state: 'error' } : s)),
+      );
+    }
+  }
+
+  function onProgressDismiss() {
+    const ok = progressSteps.length > 0 && progressSteps.every((s) => s.state === 'done');
+    setProgressOpen(false);
+    if (ok) router.push('/m');
   }
 
   const coveragePct = Math.round(store.zoning.coverageRatio * 100);
@@ -330,17 +416,27 @@ export default function MobileInputPage() {
 
         <button
           onClick={onRun}
-          disabled={busy}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-3 text-[13px] font-semibold text-white disabled:opacity-60"
-          style={{ background: 'var(--volans-primary)' }}
+          disabled={busy || progressOpen}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-3 text-[13px] font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
+          style={{
+            background: 'var(--volans-primary)',
+            boxShadow: '0 8px 18px rgba(59,109,225,0.3)',
+          }}
         >
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-          解析を実行
+          {(busy || progressOpen) && <Loader2 className="h-4 w-4 animate-spin" />}
+          {progressOpen ? '解析中…' : '解析を実行'}
         </button>
         <div className="text-center text-[10px]" style={{ color: 'var(--volans-muted)' }}>
-          解析は数秒で完了します（ローカル計算）
+          容積・斜線・天空率を順に計算します（数秒〜数十秒）
         </div>
       </div>
+
+      <AnalysisProgressOverlay
+        open={progressOpen}
+        steps={progressSteps}
+        error={progressError}
+        onDismiss={onProgressDismiss}
+      />
     </>
   );
 }

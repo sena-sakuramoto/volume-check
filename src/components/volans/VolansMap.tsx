@@ -90,13 +90,13 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
               'case',
               ['get', 'selected'],
               '#3b6de1',
-              '#94a3b8',
+              '#3b6de1',
             ],
             'fill-opacity': [
               'case',
               ['get', 'selected'],
               0.45,
-              0.2,
+              0.18,
             ],
           },
         });
@@ -108,14 +108,20 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
             'line-color': [
               'case',
               ['get', 'selected'],
+              '#2b57bf',
               '#3b6de1',
-              '#64748b',
             ],
             'line-width': [
               'case',
               ['get', 'selected'],
-              2.2,
-              1,
+              3,
+              1.6,
+            ],
+            'line-dasharray': [
+              'case',
+              ['get', 'selected'],
+              ['literal', [1, 0]],
+              ['literal', [2, 2]],
             ],
           },
         });
@@ -227,13 +233,40 @@ export function VolansMap({ height = 220, showZoom = false }: VolansMapProps) {
 
   return (
     <div
-      ref={containerRef}
+      className="relative"
       style={{
-        height,
         borderRadius: 8,
         overflow: 'hidden',
         border: `1px solid var(--volans-border)`,
       }}
-    />
+    >
+      <div ref={containerRef} style={{ height }} />
+
+      {/* Helper banner — tells users what they can actually do on the map. */}
+      <div
+        className="pointer-events-none absolute left-2 right-2 top-2 rounded-md px-3 py-1.5 text-[11px]"
+        style={{
+          background: 'rgba(255,255,255,0.92)',
+          border: `1px solid var(--volans-border-strong)`,
+          color: 'var(--volans-text)',
+          backdropFilter: 'blur(4px)',
+        }}
+      >
+        {candidates.length === 0 ? (
+          <span style={{ color: 'var(--volans-muted)' }}>
+            📍 この地点を中心に敷地を手動設定（下のプリセット参照）
+          </span>
+        ) : (
+          <span>
+            🖱 筆界候補 <strong>{candidates.length}</strong> 件 — 青枠タップで敷地を選択
+            {selectedIdx >= 0 && (
+              <span className="ml-1" style={{ color: 'var(--volans-success)' }}>
+                （選択中: {candidates[selectedIdx]?.chiban ?? '—'}）
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
