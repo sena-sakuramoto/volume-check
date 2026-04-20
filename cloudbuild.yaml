@@ -28,6 +28,11 @@ images:
 steps:
   - name: gcr.io/cloud-builders/docker
     id: build
+    # Dockerfile uses `RUN --mount=type=cache,...` which requires BuildKit.
+    # The default docker builder on this image is the legacy builder; enable
+    # BuildKit via the env var so the cache mount works.
+    env:
+      - DOCKER_BUILDKIT=1
     args:
       - build
       - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_IMAGE_REPO}/volans-web:${SHORT_SHA}
