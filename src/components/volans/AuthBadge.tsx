@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { User as UserIcon, LogOut, LogIn, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -8,10 +8,38 @@ import { useAuth } from '@/hooks/useAuth';
  * Header badge for Firebase auth. In "unconfigured" mode it shows a subtle
  * "ローカル" indicator (no sign-in possible). With Firebase configured it
  * lets the user sign in with Google or sign out.
+ *
+ * SSR renders a neutral placeholder to avoid any hydration mismatch — the
+ * real auth UI only shows once the client is mounted and useAuth has
+ * settled on an initialized state.
  */
 export function AuthBadge() {
-  const { configured, user, signInWithGoogle, signInGuest, signOut } = useAuth();
+  const { configured, user, signInWithGoogle, signInGuest, signOut, initialized } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    queueMicrotask(() => setMounted(true));
+  }, []);
+
+  // SSR + first client render: render a same-shape placeholder so hydration
+  // sees identical markup on both sides. Once mounted, swap in the real UI.
+  if (!mounted || !initialized) {
+    return (
+      <div
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px]"
+        style={{
+          background: 'var(--volans-surface-alt)',
+          color: 'var(--volans-muted)',
+          border: `1px solid var(--volans-border)`,
+        }}
+        aria-hidden
+      >
+        <UserIcon className="h-3 w-3" />
+        <span className="opacity-50">…</span>
+      </div>
+    );
+  }
 
   if (!configured) {
     return (
