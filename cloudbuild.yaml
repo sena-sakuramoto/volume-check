@@ -59,8 +59,12 @@ steps:
       - --max-instances=3
       - --concurrency=80
       - --timeout=120s
+      - --cpu-boost
       - --set-env-vars=NEXT_TELEMETRY_DISABLED=1,NODE_ENV=production
       # Inject the Gemini API key via Secret Manager. Create the secret once:
       #   echo -n "$GEMINI_API_KEY" | gcloud secrets create gemini-api-key --data-file=-
       # Then grant the Cloud Build SA `roles/secretmanager.secretAccessor`.
       - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+      # Liveness/readiness probes default to TCP on --port. /api/health is
+      # available for external uptime checks (Google Cloud Monitoring etc).
+      - --labels=app=volans,tier=web
