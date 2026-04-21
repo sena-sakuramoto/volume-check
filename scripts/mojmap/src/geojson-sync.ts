@@ -74,11 +74,19 @@ export async function downloadGeojsonIfMissing(
  * Guarantee every dataset mentioned in the manifest has a local NDJSON.gz.
  * Returns the list of dataset ids that were pulled from GCS (useful for
  * progress reporting).
+ *
+ * Failure-only manifest entries (`zipSha256 === ''`) are intentionally
+ * skipped — they represent datasets the pipeline has never successfully
+ * parsed, so their NDJSON.gz does not exist on GCS yet. Including them
+ * in this step would throw and kill the whole run right before the
+ * PMTiles build.
  */
 export async function ensureAllPresent(cfg: Config, manifest: Manifest): Promise<string[]> {
   const ids = Object.keys(manifest.datasets);
   const pulled: string[] = [];
   for (const id of ids) {
+    const entry = manifest.datasets[id];
+    if (!entry || !entry.zipSha256) continue;
     const localPath = path.join(cfg.workDir, 'geojson', `${id}.ndjson.gz`);
     try {
       const s = await stat(localPath);

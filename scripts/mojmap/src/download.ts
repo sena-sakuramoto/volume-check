@@ -1,4 +1,4 @@
-import { request } from 'undici';
+import { request, interceptors, Agent } from 'undici';
 import { createWriteStream } from 'node:fs';
 import { mkdir, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -6,6 +6,13 @@ import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import type { Config } from './config.js';
 import { log } from './logger.js';
+import { MOJMAP_HTTP_HEADERS } from './ckan.js';
+
+// Default dispatcher wrapped with a redirect interceptor — G空間 CKAN
+// /download/ URLs 302 to pre-signed S3 URLs and undici does not follow
+// redirects on a bare `request()` call. Using a dispatcher keeps the
+// behaviour transparent to callers.
+const redirectingDispatcher = new Agent().compose(interceptors.redirect({ maxRedirections: 10 }));
 
 /**
  * Download a single ZIP with sha256 verification. We retry transient failures
@@ -29,11 +36,13 @@ async function sha256File(p: string): Promise<string> {
 }
 
 async function downloadOnce(cfg: Config, url: string, dest: string): Promise<{ sha256: string; size: number }> {
+  // Follow redirects via the shared dispatcher — see top of file.
   const resp = await request(url, {
     method: 'GET',
-    headers: { accept: '*/*' },
+    headers: { ...MOJMAP_HTTP_HEADERS, accept: '*/*' },
     bodyTimeout: cfg.httpTimeoutMs,
     headersTimeout: cfg.httpTimeoutMs,
+    dispatcher: redirectingDispatcher,
   });
   if (resp.statusCode < 200 || resp.statusCode >= 300) {
     throw new Error(`HTTP ${resp.statusCode} for ${url}`);

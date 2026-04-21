@@ -120,11 +120,17 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   log.info('run.pulledCache', { count: pulled.length });
   await writeListing(cfg, nextManifest);
 
-  // 6. Build PMTiles + publish — only if we actually changed something.
-  const anyMutation = results.some((r) => r.ok && r.featureCount !== -1) || opts.mode === 'full';
+  // 6. Build PMTiles + publish — only if there is at least one parsed dataset.
+  //    We require a surviving dataset instead of just "any mutation" so that
+  //    a mode=full run where 100% of downloads failed exits with a useful
+  //    error instead of tippecanoe complaining about empty input.
+  const haveAnyData = Object.values(nextManifest.datasets).some((d) => d.zipSha256);
+  const shouldPublish =
+    haveAnyData &&
+    (results.some((r) => r.ok && r.featureCount !== -1) || opts.mode === 'full');
   let pmtilesPublished = false;
   let versionedKey: string | undefined;
-  if (anyMutation) {
+  if (shouldPublish) {
     const pmtilesPath = path.join(cfg.workDir, 'mojmap.pmtiles');
     await buildPmtiles(cfg, {
       geojsonDir: path.join(cfg.workDir, 'geojson'),
@@ -139,6 +145,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     };
     pmtilesPublished = true;
     log.info('run.publish.ok', publishResult as unknown as Record<string, unknown>);
+  } else if (!haveAnyData) {
+    log.warn('run.publish.skipped', { reason: 'no successfully parsed datasets — check download logs' });
   } else {
     log.info('run.publish.skipped', { reason: 'no mutating results' });
   }

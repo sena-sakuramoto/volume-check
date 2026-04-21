@@ -71,13 +71,37 @@ test('PHASE1_CODES size is non-trivial', () => {
   assert.ok(PHASE1_CODES.size > 50, 'expected at least 50 Phase 1 codes');
 });
 
-test('extractMunicipalityCode — prefers extras with canonical key', () => {
+test('extractMunicipalityCode — prefers ZIP resource filename', () => {
+  const pkg = {
+    id: 'x',
+    name: 'houmusyouchizu-2025-1-898',
+    title: 'MOJ map data',
+    metadata_modified: '2026-04-15T00:00:00Z',
+    resources: [
+      { id: 'r1', url: 'https://cdn/dataset/x/resource/y/download/13104-3902-2024.zip', format: 'ZIP' },
+    ],
+  };
+  assert.equal(extractMunicipalityCode(pkg), '13104');
+});
+
+test('extractMunicipalityCode — uses resource.name when URL lacks filename', () => {
   const pkg = {
     id: 'x',
     name: 'foo',
     title: 'bar',
     metadata_modified: '2026-04-15T00:00:00Z',
-    resources: [],
+    resources: [{ id: 'r1', url: 'https://cdn/opaque', name: '16343-2301-2024.zip', format: 'ZIP' }],
+  };
+  assert.equal(extractMunicipalityCode(pkg), '16343');
+});
+
+test('extractMunicipalityCode — falls back to extras when resources lack codes', () => {
+  const pkg = {
+    id: 'x',
+    name: 'foo',
+    title: 'bar',
+    metadata_modified: '2026-04-15T00:00:00Z',
+    resources: [{ id: 'r1', url: 'https://cdn/opaque.pdf', format: 'PDF' }],
     extras: [{ key: '全国地方公共団体コード', value: '13104' }],
   };
   assert.equal(extractMunicipalityCode(pkg), '13104');
@@ -89,7 +113,7 @@ test('extractMunicipalityCode — falls back to a 5-digit tag', () => {
     name: 'foo',
     title: 'bar',
     metadata_modified: '2026-04-15T00:00:00Z',
-    resources: [],
+    resources: [{ id: 'r1', url: 'https://cdn/a.pdf', format: 'PDF' }],
     tags: [{ name: '東京都' }, { name: '13102' }],
   };
   assert.equal(extractMunicipalityCode(pkg), '13102');
@@ -101,7 +125,7 @@ test('extractMunicipalityCode — title regex fallback avoids 6-digit false matc
     name: 'foo',
     title: 'ID 123456 東京都新宿区 13104',
     metadata_modified: '2026-04-15T00:00:00Z',
-    resources: [],
+    resources: [{ id: 'r1', url: 'https://cdn/a.pdf', format: 'PDF' }],
   };
   // The `123456` contains a 5-digit run (12345/23456) but both are preceded
   // or followed by a digit, so neither must match. `13104` is standalone.
