@@ -13,6 +13,12 @@ export interface ParcelCandidate {
   ring: GeoPoint[];
   distanceMeters: number | null;
   containsPoint: boolean;
+  /**
+   * Which underlying dataset produced this candidate. 'moj' is the
+   * authoritative 法務省 登記所備付地図 layer; 'amx' is the 農研機構 AMX
+   * fallback; undefined means unlabelled (older data).
+   */
+  source?: 'moj' | 'amx';
 }
 
 export interface VolansProjectState {
@@ -42,6 +48,7 @@ export interface VolansProjectState {
    * confidence badge so the user always knows what data lineage is
    * driving the volume check.
    *   - 'demo':     INITIAL demo polygon (default)
+   *   - 'moj':      chosen from 法務省 登記所備付地図 (highest trust, legal basis)
    *   - 'parcel':   chosen from NARO AMX parcel candidates (authoritative)
    *   - 'building': estimated from OSM building footprint at the address
    *                 (fallback when AMX has no coverage)
@@ -49,7 +56,7 @@ export interface VolansProjectState {
    *   - 'dxf':      from DxfBoundaryPicker
    *   - 'ocr':      from OcrBoundaryPicker
    */
-  siteSource: 'demo' | 'parcel' | 'building' | 'manual' | 'dxf' | 'ocr';
+  siteSource: 'demo' | 'moj' | 'parcel' | 'building' | 'manual' | 'dxf' | 'ocr';
 
   /** 天空率 optimisation result — set by searchMaxSkyVolume */
   skyMaxScale: number | null;
@@ -240,17 +247,22 @@ export const useVolansStore = create<VolansStore>()(
                 coordinates?: [number, number][][] | [number, number][];
                 containsPoint?: boolean;
                 distanceMeters?: number | null;
+                properties?: Record<string, unknown>;
               }>;
             };
             if (pr.parcels && pr.parcels.length > 0) {
               for (const p of pr.parcels) {
                 const ring = flattenOuterRing(p.coordinates);
                 if (ring.length >= 3) {
+                  const rawSource = String(p.properties?.source ?? '');
+                  const source: 'moj' | 'amx' | undefined =
+                    rawSource === 'moj' ? 'moj' : rawSource === 'amx' ? 'amx' : undefined;
                   parcelCandidates.push({
                     chiban: p.chiban ?? '—',
                     ring,
                     distanceMeters: p.distanceMeters ?? null,
                     containsPoint: Boolean(p.containsPoint),
+                    source,
                   });
                 }
               }
@@ -264,7 +276,10 @@ export const useVolansStore = create<VolansStore>()(
                 const site = buildSiteFromGeoRing(pick.ring);
                 if (site) {
                   nextSite = site;
-                  nextSiteSource = 'parcel';
+                  // MOJ gets its own badge (highest trust). AMX / unlabelled
+                  // legacy data continue to surface as 'parcel' so existing
+                  // tests and UI copy keep working.
+                  nextSiteSource = pick.source === 'moj' ? 'moj' : 'parcel';
                   chosenRing = pick.ring;
                 }
               }

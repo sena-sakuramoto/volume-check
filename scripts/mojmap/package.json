@@ -1,0 +1,31 @@
+{
+  "name": "@volans/mojmap-builder",
+  "private": true,
+  "version": "0.1.0",
+  "description": "法務省 登記所備付地図 XML → PMTiles パイプライン (Phase 1)",
+  "type": "module",
+  "scripts": {
+    "daily": "tsx src/daily.ts",
+    "full": "tsx src/full.ts",
+    "fetch-ckan": "tsx src/commands/fetch-ckan.ts",
+    "diff": "tsx src/commands/diff.ts",
+    "download": "tsx src/commands/download.ts",
+    "parse": "tsx src/commands/parse.ts",
+    "build-pmtiles": "tsx src/commands/build-pmtiles.ts",
+    "publish": "tsx src/commands/publish.ts",
+    "verify-crs": "tsx src/commands/verify-crs.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "node --import tsx --test src/__tests__/unit.test.ts"
+  },
+  "dependencies": {
+    "@google-cloud/storage": "^7.14.0",
+    "proj4": "^2.12.1",
+    "undici": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/proj4": "^2.5.6",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

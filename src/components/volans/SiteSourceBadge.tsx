@@ -22,6 +22,13 @@ export function SiteSourceBadge({ compact = false }: { compact?: boolean }) {
       bg: 'var(--volans-surface-alt)',
       icon: '🧪',
     },
+    moj: {
+      label: '登記所備付地図',
+      detail: '法務省 登記所備付地図 XML 由来（正式地番、法的根拠あり）',
+      color: 'var(--volans-success)',
+      bg: 'var(--volans-success-soft)',
+      icon: '📜',
+    },
     parcel: {
       label: '筆界データ',
       detail: '農研機構 AMX PMTiles 由来（実測地番）',
