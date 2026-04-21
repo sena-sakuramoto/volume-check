@@ -8,7 +8,6 @@ import { pipeline } from 'node:stream/promises';
 import { createWriteStream } from 'node:fs';
 import type { Config } from './config.js';
 import type { ResolvedDataset } from './types.js';
-import { epsgForMunicipality } from './crs.js';
 import { log } from './logger.js';
 
 /**
@@ -16,12 +15,18 @@ import { log } from './logger.js';
  * CLI (https://github.com/KotobaMedia/mojxml-rs). The Rust CLI handles:
  *  - ZIP extraction (including nested files),
  *  - JIS X 7307 XML decode (Shift_JIS / UTF-8 autodetect),
- *  - Japan Plane Rectangular → WGS84 transform (zone driven by --epsg),
- *  - NDJSON emission (one GeoJSON Feature per line).
+ *  - Japan Plane Rectangular → WGS84 transform (CRS zone is declared in
+ *    the XML itself, so the converter picks it up automatically).
  *
  * We layer our own property normalisation on top so tippecanoe sees a
  * consistent schema with `source: 'moj'`, zenkaku-normalised `chiban`, and
  * the municipality code.
+ *
+ * CLI shape (verified against upstream README):
+ *   mojxml-rs [OPTIONS] <DST_FILE> <SRC_FILES>...
+ *
+ * Output format is selected by the destination extension — `.json` emits
+ * newline-delimited GeoJSON which is exactly what tippecanoe wants.
  */
 
 export interface ParseResult {
@@ -74,30 +79,20 @@ export async function parseZipToNdjsonGz(
   ds: ResolvedDataset,
   zipPath: string,
 ): Promise<ParseResult> {
-  const epsg = epsgForMunicipality(ds.municipalityCode);
   const outDir = path.join(cfg.workDir, 'geojson');
   await mkdir(outDir, { recursive: true });
-  const ndjsonPath = path.join(outDir, `${ds.id}.raw.ndjson`);
+  const ndjsonPath = path.join(outDir, `${ds.id}.raw.json`);
   const ndjsonGzPath = path.join(outDir, `${ds.id}.ndjson.gz`);
 
-  // 1. mojxml-rs -> raw NDJSON file.
-  //    --epsg aligns every emitted coordinate to the target CRS so we can
-  //    normalise the map to WGS84 before tippecanoe (EPSG:4326).
+  // 1. mojxml-rs writes to its destination file directly. `-c` pulls in
+  //    chikugai (地区外) features too; we keep those so adjacent parcels at
+  //    ward boundaries aren't silently dropped.
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
       cfg.mojxmlBin,
-      [
-        'convert',
-        zipPath,
-        '--format=ndjson',
-        `--source-epsg=${epsg}`,
-        '--target-epsg=4326',
-        '--no-arc',
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
+      ['-c', ndjsonPath, zipPath],
+      { stdio: ['ignore', 'inherit', 'pipe'] },
     );
-    const sink = createWriteStream(ndjsonPath);
-    child.stdout.pipe(sink);
     let stderr = '';
     child.stderr.on('data', (b) => {
       stderr += b.toString('utf-8');
