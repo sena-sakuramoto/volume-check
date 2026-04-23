@@ -81,7 +81,10 @@ export async function parseZipToNdjsonGz(
 ): Promise<ParseResult> {
   const outDir = path.join(cfg.workDir, 'geojson');
   await mkdir(outDir, { recursive: true });
-  const ndjsonPath = path.join(outDir, `${ds.id}.raw.json`);
+  // mojxml-rs selects the writer by extension: `.geojson` = newline-delimited
+  // GeoJSON, `.fgb` = FlatGeobuf, `.parquet` = GeoParquet. We use NDJSON
+  // because tippecanoe ingests it natively.
+  const ndjsonPath = path.join(outDir, `${ds.id}.raw.geojson`);
   const ndjsonGzPath = path.join(outDir, `${ds.id}.ndjson.gz`);
 
   // 1. mojxml-rs writes to its destination file directly. `-c` pulls in
